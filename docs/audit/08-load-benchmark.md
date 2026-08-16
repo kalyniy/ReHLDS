@@ -122,9 +122,37 @@ The dump now reports `skipped=N` (deadlines abandoned to overrun): 643 at 2000 H
 1000 Hz over a 25 s window with 10 bots. This is the honest sustainability signal — a
 growing count means the configured tick rate does not fit the host.
 
-The spin-window figures in §3 predate this fix and should be re-measured before the spin
-trade-off is treated as settled; the fix narrowed the no-spin tail considerably, so the
-spin's marginal value is now smaller than §4 implies.
+The spin-window figures in §3 predate this fix. **They have now been re-measured — see §4c,
+which supersedes §4's recommendation.**
+
+## 4c. Spin window, re-measured after the fix (supersedes §4)
+
+Three runs, 10 bots, `sys_ticrate 1000`, `-pingboost 4`:
+
+| `sv_rehlds_sched_spin_us` | p50 | p95 | p99 | p99.9 | lateness p50 | lateness p95 | CPU |
+|---|---|---|---|---|---|---|---|
+| 0 | 999.8 | 1022.2 | 1241.6 | 2110.0 | 12.2 µs | 34.6 µs | **4.1 %** |
+| **50** | **1000.0** | **1002.4** | 1230.9 | 2171.8 | **0.6 µs** | **3.2 µs** | 6.6 % |
+| 100 | 1000.0 | 1002.4 | **1393.4** | 2458.5 | 0.7 µs | 3.5 µs | 11.5 % |
+
+**What changed.** §4 concluded that a 100 µs spin bought a substantially better *tail*. After
+the catch-up-frame fix that is no longer true — the fix had already captured most of the tail
+benefit, and what spin still buys is the **near-median**, not p99:
+
+- **p95 improves 1022.2 → 1002.4 µs**, and deadline lateness p95 improves **11×**
+  (34.6 → 3.2 µs), p50 **20×** (12.2 → 0.6 µs). Large, consistent, clearly real.
+- **p99 and p99.9 do not improve.** 1241.6 / 1230.9 / 1393.4 across the three settings is
+  within run-to-run noise, and 100 µs is if anything the worst of them.
+
+**Revised recommendation: 50 µs, if you want it at all.** It captures the entire near-median
+benefit for 6.6 % CPU. 100 µs costs 11.5 % — nearly triple the no-spin cost — and buys
+nothing measurable over 50.
+
+**The more important conclusion is negative.** Spin is a pure-userspace mitigation, and it
+cannot move p99. That is direct evidence that **the remaining p99 gap is an OS scheduling
+property, not something the engine can fix by burning CPU** — which points at `SCHED_FIFO`,
+core isolation, `preempt=full`, IRQ affinity and C-state capping, all of which need root and
+none of which have been tested.
 
 ## 5. Cheaper alternative worth testing before accepting the spin cost
 
