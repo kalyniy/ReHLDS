@@ -34,3 +34,19 @@ void FramePerf_OnAdmission(qboolean admitted);
 // Bracket the admitted frame's work.
 void FramePerf_OnFrameBegin();
 void FramePerf_OnFrameEnd();
+
+// Per-subsystem timing inside SV_Frame. These are the stages the brief ranks highest
+// (sections 5 and 11): the command path, per-frame physics, and snapshot/delta encoding.
+// perf(1) would be the usual tool, but it needs perf_event_paranoid lowered, which needs
+// root; these timers need no privileges and attribute directly to engine stages rather
+// than to symbols.
+enum FramePerfSubsystem
+{
+	FP_SUB_READPACKETS = 0,	// SV_ReadPackets: parse move, SV_RunCmd, lag comp, weapons, traces
+	FP_SUB_PHYSICS,		// SV_Physics + pfnStartFrame
+	FP_SUB_SNAPSHOT,	// SV_SendClientMessages: fullpack, delta encode, netchan
+	FP_SUB_COUNT
+};
+
+void FramePerf_SubBegin(int subsystem);
+void FramePerf_SubEnd(int subsystem);

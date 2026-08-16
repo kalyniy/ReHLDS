@@ -32,6 +32,18 @@ static uint64 g_frame_start_ns;
 static bool   g_enabled;
 static uint64 g_total_admitted, g_total_rejected;
 
+// Per-subsystem accumulation for the frame currently executing, flushed into the rings by
+// FramePerf_OnFrameEnd. Stored in nanoseconds; uint32 caps at 4.3 s, far above any frame.
+static uint64 g_subStart[FP_SUB_COUNT];
+static uint32 g_subAccum[FP_SUB_COUNT];
+static uint32 g_subRing[FP_SUB_COUNT][FRAMEPERF_RING_SIZE];
+
+static const char *const g_subNames[FP_SUB_COUNT] = {
+	"SV_ReadPackets",
+	"SV_Physics",
+	"SV_SendClientMsgs",
+};
+
 static uint64 FramePerf_Now()
 {
 	struct timespec ts;
@@ -92,7 +104,30 @@ void FramePerf_OnFrameBegin()
 	if (!g_enabled)
 		return;
 
+	Q_memset(g_subAccum, 0, sizeof(g_subAccum));
 	g_frame_start_ns = FramePerf_Now();
+}
+
+void FramePerf_SubBegin(int subsystem)
+{
+	if (!g_enabled || subsystem < 0 || subsystem >= FP_SUB_COUNT)
+		return;
+
+	g_subStart[subsystem] = FramePerf_Now();
+}
+
+void FramePerf_SubEnd(int subsystem)
+{
+	if (!g_enabled || subsystem < 0 || subsystem >= FP_SUB_COUNT)
+		return;
+
+	// A begin that happened before sampling was switched on leaves a zero start; ignore it
+	// rather than accumulating a bogus multi-second interval.
+	if (!g_subStart[subsystem])
+		return;
+
+	g_subAccum[subsystem] += (uint32)(FramePerf_Now() - g_subStart[subsystem]);
+	g_subStart[subsystem] = 0;
 }
 
 void FramePerf_OnFrameEnd()
@@ -115,6 +150,10 @@ void FramePerf_OnFrameEnd()
 		: g_epoch_ns + g_deadline_index * g_period_ns;
 	s->rejected_before = g_rejected_run;
 	s->flags = 0;
+
+	for (int i = 0; i < FP_SUB_COUNT; i++)
+		g_subRing[i][g_written & FRAMEPERF_RING_MASK] = g_subAccum[i];
+
 	g_written++;
 
 	g_total_admitted++;
@@ -224,6 +263,25 @@ static void FramePerf_Dump_f()
 	FramePerf_Report("frame interval", interval, ni, "us");
 	FramePerf_Report("frame execution", execution, ne, "us");
 	FramePerf_Report("deadline lateness", lateness, nl, "us");
+
+	// Subsystem breakdown. Percentiles are per-frame totals, so the p50 column does not sum
+	// to the frame-execution p50 -- different frames peak in different stages.
+	{
+		static uint64 scratch[FRAMEPERF_RING_SIZE];
+		Con_Printf("  -- subsystem breakdown (per admitted frame) --\n");
+		for (int sub = 0; sub < FP_SUB_COUNT; sub++)
+		{
+			uint64 total = 0;
+			for (int i = 0; i < n; i++)
+			{
+				scratch[i] = (uint64)g_subRing[sub][(first + i) & FRAMEPERF_RING_MASK];
+				total += scratch[i];
+			}
+			FramePerf_Report(g_subNames[sub], scratch, n, "us");
+			Con_Printf("  %-18s share of measured frame time: %5.1f%%\n", "",
+				span > 0.0 ? 100.0 * (double)total / (span * 1e9) : 0.0);
+		}
+	}
 
 	Con_Printf("  admitted=%llu rejected=%llu reject_ratio=%.3f\n",
 		(unsigned long long)g_total_admitted, (unsigned long long)g_total_rejected,

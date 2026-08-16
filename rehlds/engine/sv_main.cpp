@@ -8127,15 +8127,24 @@ void EXT_FUNC SV_Frame_Internal()
 	gGlobalVariables.frametime = host_frametime;
 	g_psv.oldtime = g_psv.time;
 	SV_CheckCmdTimes();
+
+	FramePerf_SubBegin(FP_SUB_READPACKETS);
 	SV_ReadPackets();
+	FramePerf_SubEnd(FP_SUB_READPACKETS);
+
 	if (SV_IsSimulating())
 	{
+		FramePerf_SubBegin(FP_SUB_PHYSICS);
 		SV_Physics();
+		FramePerf_SubEnd(FP_SUB_PHYSICS);
 		g_psv.time += host_frametime;
 	}
 	SV_RequestMissingResourcesFromClients();
 	SV_CheckTimeouts();
+
+	FramePerf_SubBegin(FP_SUB_SNAPSHOT);
 	SV_SendClientMessages();
+	FramePerf_SubEnd(FP_SUB_SNAPSHOT);
 	SV_CheckMapDifferences();
 	SV_GatherStatistics();
 	Steam_RunFrame();
