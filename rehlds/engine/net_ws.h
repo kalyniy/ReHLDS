@@ -162,6 +162,7 @@ extern net_messages_t *normalqueue;
 
 // -pingboost 4 absolute-deadline scheduler state. See NET_Sleep_Deadline in net_ws.cpp.
 extern qboolean g_bSchedDeadlineActive;	// TRUE once it is pacing the host loop
+extern qboolean g_bSchedNetSleepActive;	// TRUE once -pingboost 3's NET_Sleep_Timeout has run
 extern uint64 g_SchedFrameDeadlineNs;	// deadline the executing frame was released at
 extern uint64 g_SchedMissedDeadlines;	// deadlines skipped because a frame overran
 

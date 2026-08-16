@@ -982,6 +982,8 @@ DLL_EXPORT int NET_Sleep_Timeout()
 	static int numFrames;
 	static int staggerFrames;
 
+	g_bSchedNetSleepActive = TRUE;
+
 	int fps = (int)sys_ticrate.value;
 	int32 curtime = (int)Sys_FloatTime();
 	if (lasttime)
@@ -1086,6 +1088,10 @@ cvar_t sv_rehlds_sched_spin_us = { "sv_rehlds_sched_spin_us", "0", 0, 0.0f, NULL
 // mode it was meant to replace. The failure is what established that the deadline has to
 // replace the gate rather than sit on top of it.
 qboolean g_bSchedDeadlineActive = FALSE;
+
+// TRUE once NET_Sleep_Timeout has run, i.e. the launcher selected -pingboost 3. Used only to
+// tell apart the modes that can exceed ~1000 Hz from the ones that silently cannot.
+qboolean g_bSchedNetSleepActive = FALSE;
 
 // The deadline the frame now executing was released at. Read by the frame instrumentation
 // so that reported lateness is measured against the deadline the scheduler actually used,

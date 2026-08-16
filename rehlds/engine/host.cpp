@@ -693,6 +693,25 @@ qboolean Host_FilterTime(float time)
 		// shorter than a period -- exactly what this check rejects. See the comment on
 		// g_bSchedDeadlineActive in engine/net_ws.cpp. Every other pingboost mode is
 		// unaffected.
+		// Warn once if sys_ticrate is set above what the selected pacing mode can reach.
+		// Measured (docs/audit/06-real-server-validation.md): under -pingboost 0/1/2 the
+		// launcher sleeps a fixed 1 ms per iteration, so sys_ticrate 2000 delivers 927.6 Hz
+		// -- indistinguishable from sys_ticrate 1000's 928.8 Hz. Operators have no way to
+		// tell from the legacy FPS counter that their setting does nothing.
+		{
+			static qboolean warned = FALSE;
+			if (!warned && g_psv.active && fps > 1000.0f
+				&& !g_bSchedDeadlineActive && !g_bSchedNetSleepActive)
+			{
+				warned = TRUE;
+				Con_Printf("WARNING: sys_ticrate %.0f cannot be reached with the current "
+					"-pingboost mode; the host loop sleeps 1 ms per iteration, capping "
+					"the rate near 1000 Hz.\n", fps);
+				Con_Printf("         Use -pingboost 4 (absolute-deadline scheduler) or "
+					"-pingboost 3 to exceed 1000 Hz.\n");
+			}
+		}
+
 		if (fps > 0.0f && !g_bSchedDeadlineActive)
 		{
 			if (1.0f / (fps + 1.0f) > realtime - oldrealtime)
