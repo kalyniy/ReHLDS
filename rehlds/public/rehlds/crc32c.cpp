@@ -130,8 +130,19 @@ uint32 crc32c_t_sse(uint32 iCRC, const uint8 *buf, unsigned int len) {
 	uint32 crc32cval = iCRC;
 	unsigned int i = 0;
 
-	for (; i < (len >> 2); i += 4) {
-		crc32cval = _mm_crc32_u32(crc32cval, *(uint32*)&buf[i]);
+	// i is a BYTE index stepping by 4, but the bound was (len >> 2) -- a WORD count. For
+	// len = 64 that processed bytes 0..15 and left the rest to the byte loop below, so the
+	// SSE path only ever did a quarter of its intended work. Output was unaffected, since
+	// CRC32C is sequential and the byte loop resumes at the correct index, which is why the
+	// unit tests never caught it.
+	//
+	// memcpy rather than *(uint32*)&buf[i]: the buffer has no alignment guarantee, and the
+	// typed load is undefined behaviour that UBSan flags. Both compilers lower this to the
+	// same single instruction.
+	for (; i + 4 <= len; i += 4) {
+		uint32 word;
+		memcpy(&word, &buf[i], sizeof(word));
+		crc32cval = _mm_crc32_u32(crc32cval, word);
 	}
 
 	for (; i < len; i++) {

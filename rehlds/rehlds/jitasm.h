@@ -887,7 +887,13 @@ struct Backend
 
 	Backend(void* pbuff = NULL, size_t buffsize = 0) : pbuff_((uint8*) pbuff), buffsize_(buffsize), size_(0)
 	{
-		memset(pbuff, 0xCC, buffsize);	// INT3
+		// ResolveJump() constructs this with the default NULL buffer to measure code size
+		// before allocating, so the null case is reached on every delta JIT creation -- i.e.
+		// every server start. memset(NULL, c, 0) is undefined even at size zero, and both
+		// GCC and Clang are entitled to assume the argument is non-null afterwards and
+		// delete later null checks. Found by UBSan on the 32-bit build (docs/audit/23).
+		if (pbuff)
+			memset(pbuff, 0xCC, buffsize);	// INT3
 	}
 
 	size_t GetSize() const
