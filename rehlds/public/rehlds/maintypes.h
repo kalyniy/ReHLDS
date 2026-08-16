@@ -58,7 +58,14 @@
 #define BIT(n) (1<<(n))
 
 // From engine/pr_comp.h;
+// Must match common/const.h -- see the rationale there. Signed on LP64 so that negative
+// offsets from pr_strings (the Ed_StrPool hunk sits about -40 MB from it on x86-64)
+// reconstruct correctly, and so the ABI agrees with ReGameDLL's qstring_t.
+#if defined(__x86_64__) || defined(__aarch64__)
+typedef int string_t;
+#else
 typedef unsigned int string_t;
+#endif
 
 // From engine/server.h
 typedef enum sv_delta_s

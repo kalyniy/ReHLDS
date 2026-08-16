@@ -742,7 +742,25 @@ enum
 
 
 typedef unsigned int	func_t;
+
+// string_t is an offset from pr_strings / gpGlobals->pStringBase, not an index. On LP64 the
+// strings it addresses sit on both sides of that base -- measured on x86-64: the Ed_StrPool
+// hunk lands about -40 MB from it and g_psv about +3.4 MB. Both fit a signed 32-bit int
+// comfortably, but as UNSIGNED the -40 MB becomes +4.25 GB and reconstructing the pointer
+// walks off the end of the address space (observed: pr_strings + 0xFD98... = 0x8000f48a2bb2,
+// SIGSEGV in ED_ParseEdict).
+//
+// Making it signed is exactly what ReGameDLL's 64-bit build already expects --
+// regamedll/dlls/qstring.h:37 declares "using qstring_t = int" under XASH_64BIT - so the
+// engine and GameDLL agree on the ABI without widening the type or breaking plugins.
+//
+// Left unsigned on 32-bit, where wrap-around arithmetic makes any pointer round-trip
+// correctly and changing it would be a gratuitous ABI change.
+#if defined(__x86_64__) || defined(__aarch64__)
+typedef int		string_t;
+#else
 typedef unsigned int	string_t;
+#endif
 
 typedef unsigned char 		byte;
 typedef unsigned short 		word;

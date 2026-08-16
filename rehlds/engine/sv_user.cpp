@@ -532,7 +532,12 @@ void SV_AddLinksToPM_(areanode_t *node, float *pmove_mins, float *pmove_maxs)
 
 	for (l = node->solid_edicts.next; l != &node->solid_edicts; l = next)
 	{
-		check = (edict_t *)&l[-1];
+		// Recover the edict from its area link. &l[-1] subtracts sizeof(link_t), which
+		// equals offsetof(edict_t, area) only by coincidence on i386 -- both are 8 there.
+		// On LP64 link_t holds two 8-byte pointers so sizeof is 16 while the offset stays 8,
+		// and this landed 8 bytes before the edict, tripping NUM_FOR_EDICT's bounds check.
+		// world.cpp already uses the correct macro at four other traversal sites.
+		check = EDICT_FROM_AREA(l);
 		next = l->next;
 		if (check->v.groupinfo)
 		{
