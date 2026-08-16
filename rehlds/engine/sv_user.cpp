@@ -57,6 +57,19 @@ cvar_t sv_unlag = { "sv_unlag", "1", 0, 0.0f, NULL };
 cvar_t sv_maxunlag = { "sv_maxunlag", "0.5", 0, 0.0f, NULL };
 cvar_t sv_unlagpush = { "sv_unlagpush", "0.0", 0, 0.0f, NULL };
 cvar_t sv_unlagsamples = { "sv_unlagsamples", "1", 0, 0.0f, NULL };
+
+// Rewind the victim's POSE, not just their origin, during lag compensation.
+//
+// SV_SetupMove has always restored origin alone, so R_StudioHull builds the hitboxes from
+// the victim's live angles/sequence/frame while standing them at their historical position -
+// the right place with the wrong pose. Measured on a LAN client with a 17ms rewind window
+// (docs/audit/22): yaw divergence 10.4 deg at p90 and 20.9 at p99, with the animation
+// sequence differing 1.36% of the time. The historical values are already stored in the
+// frame history's entity_state_t and simply go unread.
+//
+// Off by default. This changes hit registration, so it must be opted into and measured -
+// see the m_flGaityaw caveat in SV_SetupMove before assuming it is a strict improvement.
+cvar_t sv_rehlds_unlag_pose = { "sv_rehlds_unlag_pose", "0", 0, 0.0f, NULL };
 cvar_t mp_consistency = { "mp_consistency", "1", FCVAR_SERVER, 0.0f, NULL };
 cvar_t sv_voiceenable = { "sv_voiceenable", "1", FCVAR_SERVER | FCVAR_ARCHIVE, 0.0f, NULL };
 
@@ -1226,6 +1239,80 @@ entity_state_t *SV_FindEntInPack(int index, packet_entities_t *pack)
 	return NULL;
 }
 
+// Shortest-arc interpolation between two Euler angles, so a rewind across the +-180 boundary
+// does not sweep the long way round.
+static float SV_LerpAngle(float from, float to, float frac)
+{
+	float d = to - from;
+	while (d > 180.0f) d -= 360.0f;
+	while (d < -180.0f) d += 360.0f;
+
+	float r = from + d * frac;
+	while (r > 180.0f) r -= 360.0f;
+	while (r < -180.0f) r += 360.0f;
+	return r;
+}
+
+// Apply the victim's historical pose alongside their historical origin.
+//
+// Rationale and evidence: docs/audit/13 and 22. The engine has always rewound origin only, so
+// R_StudioHull constructs the hitboxes from live angles/sequence/frame at the historical
+// position. Everything applied here is already present in the frame history and was simply
+// unread.
+//
+// IMPORTANT LIMITATION. Under ReGameDLL's blending interface the ROOT bone matrix yaw is
+// overwritten with the live m_flGaityaw (regamedll/dlls/animation.cpp:1183), and the nine-way
+// blend uses live m_flYaw/m_flPitch rather than the blending[] passed in. Those live in the
+// GameDLL, are neither networked nor snapshotted, and cannot be reached from here. So this
+// corrects the ANIMATION (which sequence, which frame) and the pitch that feeds
+// R_StudioPlayerBlend, but not the gait yaw. It is therefore an improvement in the fields it
+// covers and NOT a complete fix -- hence the cvar, and hence the measurement requirement.
+static void SV_ApplyHistoricalPose(edict_t *ent, sv_adjusted_positions_t *pos,
+	const entity_state_t *from, const entity_state_t *to, float frac)
+{
+	pos->oldangles[0] = ent->v.angles[0];
+	pos->oldangles[1] = ent->v.angles[1];
+	pos->oldangles[2] = ent->v.angles[2];
+	pos->oldframe = ent->v.frame;
+	pos->oldsequence = ent->v.sequence;
+	pos->oldgaitsequence = ent->v.gaitsequence;
+	pos->poserestore = 1;
+
+	// Angles interpolate; a rewind mid-turn should land between the two samples.
+	if (to)
+	{
+		ent->v.angles[0] = SV_LerpAngle(from->angles[0], to->angles[0], frac);
+		ent->v.angles[1] = SV_LerpAngle(from->angles[1], to->angles[1], frac);
+		ent->v.angles[2] = SV_LerpAngle(from->angles[2], to->angles[2], frac);
+	}
+	else
+	{
+		ent->v.angles[0] = from->angles[0];
+		ent->v.angles[1] = from->angles[1];
+		ent->v.angles[2] = from->angles[2];
+	}
+
+	// Frame may only be interpolated within one sequence -- across a sequence change the
+	// frame numbers refer to different animations and blending them is meaningless. When the
+	// bracketing snapshots disagree, take the whole pose from the nearer one.
+	if (to && to->sequence == from->sequence)
+	{
+		ent->v.sequence = from->sequence;
+		ent->v.frame = from->frame + (to->frame - from->frame) * frac;
+	}
+	else
+	{
+		const entity_state_t *pick = (to && frac >= 0.5f) ? to : from;
+		ent->v.sequence = pick->sequence;
+		ent->v.frame = pick->frame;
+	}
+
+	// Networked, but note GetPlayerGaitsequence() reads ReGameDLL's live m_iGaitsequence
+	// rather than this field, so restoring it does not currently reach bone setup. Applied
+	// anyway for consistency and for mods that do read pev->gaitsequence.
+	ent->v.gaitsequence = (to && frac >= 0.5f) ? to->gaitsequence : from->gaitsequence;
+}
+
 void SV_SetupMove(client_t *_host_client)
 {
 	struct client_s *cl;
@@ -1450,7 +1537,18 @@ void SV_SetupMove(client_t *_host_client)
 		pos->initial_correction_org[0] = origin[0];
 		pos->initial_correction_org[1] = origin[1];
 		pos->initial_correction_org[2] = origin[2];
-		if (!VectorCompare(origin, cl->edict->v.origin))
+		// Sample the divergence BEFORE touching the pose, so the instrument keeps measuring
+		// the defect rather than the fix.
+		qboolean moved = !VectorCompare(origin, cl->edict->v.origin);
+		if (moved)
+			HitReg_PoseDivergence(state, cl->edict, (float)(realtime - targettime));
+
+		// A player who stood still but TURNED has an unchanged origin and a badly wrong
+		// pose, so this is deliberately not gated on the origin having moved.
+		if (sv_rehlds_unlag_pose.value != 0.0f)
+			SV_ApplyHistoricalPose(cl->edict, pos, state, pnextstate, frac);
+
+		if (moved)
 		{
 			cl->edict->v.origin[0] = origin[0];
 			cl->edict->v.origin[1] = origin[1];
@@ -1458,10 +1556,6 @@ void SV_SetupMove(client_t *_host_client)
 			SV_LinkEdict(cl->edict, FALSE);
 			pos->needrelink = 1;
 			HitReg_LagCompOutcome(HITREG_LC_REWOUND);
-
-			// Sample how far the live pose has drifted from the snapshot this origin came
-			// from. The hull will be built from cl->edict's live angles/sequence/frame.
-			HitReg_PoseDivergence(state, cl->edict, (float)(realtime - targettime));
 		}
 		else
 		{
@@ -1497,6 +1591,27 @@ void SV_RestoreMove(client_t *_host_client)
 
 		if (cli == _host_client ||! cli->active)
 			continue;
+
+		// Undo the historical pose BEFORE the origin-based guard below. A victim who stood
+		// still but turned has neworg == oldorg, so that guard would skip them and leave the
+		// pose rewound.
+		//
+		// This shares the pre-existing hazard documented in docs/audit/03 section 6: the
+		// early returns at the top of SV_RestoreMove can skip restoration entirely if a
+		// plugin changes sv_unlag/lw/lc mid-window. The consequence is milder for pose than
+		// for origin, because ReGameDLL rewrites pev->sequence/frame every PostThink, so a
+		// missed pose restore self-heals within a frame while a missed origin restore does
+		// not.
+		if (pos->poserestore)
+		{
+			cli->edict->v.angles[0] = pos->oldangles[0];
+			cli->edict->v.angles[1] = pos->oldangles[1];
+			cli->edict->v.angles[2] = pos->oldangles[2];
+			cli->edict->v.frame = pos->oldframe;
+			cli->edict->v.sequence = pos->oldsequence;
+			cli->edict->v.gaitsequence = pos->oldgaitsequence;
+			pos->poserestore = 0;
+		}
 
 		if (VectorCompare(pos->neworg, pos->oldorg) || !pos->needrelink)
 			continue;

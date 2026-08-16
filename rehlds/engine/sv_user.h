@@ -35,6 +35,8 @@
 
 const int CMD_MAXBACKUP = 64;
 
+extern cvar_t sv_rehlds_unlag_pose;
+
 typedef struct sv_adjusted_positions_s
 {
 	int active;
@@ -47,6 +49,16 @@ typedef struct sv_adjusted_positions_s
 	int deadflag;
 	vec3_t temp_org;
 	int temp_org_setflag;
+
+	// Historical pose restore (sv_rehlds_unlag_pose). SV_SetupMove has always rewound
+	// origin and nothing else, so the studio hull is built from the victim's CURRENT
+	// angles/sequence/frame at their PAST position. These save the live values so the
+	// rewound pose can be undone in SV_RestoreMove.
+	int poserestore;
+	vec3_t oldangles;
+	float oldframe;
+	int oldsequence;
+	int oldgaitsequence;
 } sv_adjusted_positions_t;
 
 typedef struct clc_func_s
