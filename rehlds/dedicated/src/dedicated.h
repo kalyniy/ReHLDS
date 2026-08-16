@@ -40,4 +40,5 @@ extern IDedicatedServerAPI *engineAPI;
 bool Sys_SetupConsole();
 void Sys_PrepareConsoleInput();
 void Sys_InitPingboost();
+void Sys_InitRealtimePriority();
 void Sys_WriteProcessIdFile();

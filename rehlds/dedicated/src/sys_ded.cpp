@@ -214,6 +214,7 @@ int StartServer(char* cmdline)
 		}
 
 		Sys_InitPingboost();
+		Sys_InitRealtimePriority();
 		Sys_WriteProcessIdFile();
 
 		// Load filesystem

@@ -180,6 +180,50 @@ void alarmFunc(int num)
 
 }
 
+// Opt-in realtime scheduling: -rtprio <1..99>.
+//
+// Measured motivation (docs/audit/08 section 4c): with -pingboost 4 the p50 and p95 frame
+// intervals are essentially exact, but p99 sits around 1240us against a 1000us target. A
+// userspace busy-spin does NOT move that p99, which is direct evidence the remaining gap is
+// the kernel not waking the thread on time rather than anything the engine can fix by
+// burning CPU. SCHED_FIFO is the lever that addresses it.
+//
+// Requires privilege. Either grant the launcher the capability, which is the least-privilege
+// option and does not need root at run time:
+//     sudo setcap cap_sys_nice+ep ./hlds_linux
+// or raise the user's rtprio rlimit in /etc/security/limits.conf and start a new session.
+//
+// NOTE: a SCHED_FIFO thread that spins will starve everything else on its core. Pin the
+// server (taskset) and leave the sibling free, and be aware kernel.sched_rt_runtime_us
+// controls how much RT starvation the kernel tolerates.
+void Sys_InitRealtimePriority()
+{
+	char *pPrio;
+	if (!CommandLine()->CheckParm("-rtprio", &pPrio) || !pPrio)
+		return;
+
+	int prio = Q_atoi(pPrio);
+	if (prio < 1 || prio > 99) {
+		printf("Warning: -rtprio %d out of range (1..99), ignoring.\n", prio);
+		return;
+	}
+
+	struct sched_param sp;
+	Q_memset(&sp, 0, sizeof(sp));
+	sp.sched_priority = prio;
+
+	if (sched_setscheduler(0, SCHED_FIFO, &sp) != 0) {
+		printf("Warning: -rtprio %d requested but sched_setscheduler(SCHED_FIFO) failed: %s\n",
+		       prio, strerror(errno));
+		printf("         Grant the capability with:  sudo setcap cap_sys_nice+ep %s\n",
+		       g_szEXEName);
+		printf("         Continuing with normal scheduling.\n");
+		return;
+	}
+
+	printf("Realtime scheduling enabled: SCHED_FIFO priority %d.\n", prio);
+}
+
 void Sys_InitPingboost()
 {
 	Sys_Sleep = Sleep_Old;
