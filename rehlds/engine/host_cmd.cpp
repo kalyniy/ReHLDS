@@ -360,10 +360,14 @@ void Host_UpdateStats(void)
 #else // _WIN32
 
 	FILE *pFile;
-	int32 dummy;
-	int32 ctime;
-	int32 stime;
-	int32 start_time;
+	// These receive %ld / %lu conversions, which write sizeof(long) bytes -- 4 on i386 but
+	// 8 on LP64. Declaring them int32 made every scanf conversion overrun its variable by
+	// four bytes on x86-64; AddressSanitizer reports a stack-buffer-overflow here on the
+	// first call. sv_stats defaults to "1" and _Host_Frame calls this once a second, so a
+	// 64-bit server corrupted its own stack once per second, by default.
+	long ctime = 0;
+	long stime = 0;
+	unsigned long start_time = 0;
 	char statFile[4096];
 	struct sysinfo infos;
 
@@ -382,17 +386,26 @@ void Host_UpdateStats(void)
 			return;
 		}
 		sysinfo(&infos);
-		fscanf(pFile, "%d %s %c %d %d %d %d %d %lu %lu \t\t\t%lu %lu %lu %ld %ld %ld %ld %ld %ld %lu \t\t\t%lu %ld %lu %lu %lu %lu %lu %lu %lu %lu \t\t\t%lu %lu %lu %lu %lu %lu",
-			&dummy,
-			statFile,
-			(char *)&dummy, &dummy, &dummy, &dummy, &dummy, &dummy, &dummy, &dummy, &dummy, &dummy, &dummy,
-			&ctime,
-			&stime,
-			&dummy, &dummy, &dummy, &dummy, &dummy,
-			&start_time,
-			&dummy, &dummy, &dummy, &dummy, &dummy, &dummy, &dummy,
-			&dummy, &dummy, &dummy, &dummy, &dummy,&dummy,&dummy,&dummy
-			);
+
+		// Assignment suppression for every field we do not use. Besides removing the
+		// type mismatches above, this drops the old "%s" that read the comm field into
+		// statFile -- an unbounded conversion into the same buffer that holds the path.
+		//
+		// Conversion positions are unchanged, so the values read are identical to before:
+		// 14 and 15 are utime and stime, and the 21st is what the previous code took for
+		// the process start time. (Per proc(5) starttime is actually field 22, so this
+		// reads itrealvalue; that discrepancy is pre-existing and architecture-neutral, it
+		// only skews the cosmetic CPU-percent stat, and correcting it is deliberately left
+		// out of a memory-safety fix.)
+		if (fscanf(pFile,
+				"%*d %*s %*c %*d %*d %*d %*d %*d %*lu %*lu %*lu %*lu %*lu"
+				" %ld %ld %*ld %*ld %*ld %*ld %*ld %lu",
+				&ctime, &stime, &start_time) != 3)
+		{
+			fclose(pFile);
+			last = Sys_FloatTime();
+			return;
+		}
 		fclose(pFile);
 
 		runticks = 100 * infos.uptime - start_time;

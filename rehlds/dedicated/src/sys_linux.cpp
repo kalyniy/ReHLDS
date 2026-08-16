@@ -28,6 +28,30 @@
 
 #include "precompiled.h"
 
+// RTLD_DEEPBIND is incompatible with the sanitizer runtimes: the sanitized allocator in the
+// main binary and the one the deep-bound library resolves for itself end up mismatched, and
+// ASan refuses to load the library at all (google/sanitizers#611). Drop it under sanitizers
+// so the GameDLL can be loaded and instrumented. Diagnostic builds only -- this relaxes
+// symbol isolation and must not reach a shipped binary.
+//
+// The nested #if is deliberate: GCC has no __has_feature, and the preprocessor does not
+// short-circuit function-like macros in a && chain, so the one-line form fails to compile
+// there.
+#if defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__)
+	#define REHLDS_SANITIZED 1
+#elif defined(__has_feature)
+	#if __has_feature(address_sanitizer) || __has_feature(thread_sanitizer)
+		#define REHLDS_SANITIZED 1
+	#endif
+#endif
+
+#ifdef REHLDS_SANITIZED
+	#define REHLDS_DLOPEN_FLAGS (RTLD_NOW | RTLD_LOCAL)
+#else
+	#define REHLDS_DLOPEN_FLAGS (RTLD_NOW | RTLD_DEEPBIND | RTLD_LOCAL)
+#endif
+
+
 class CSys: public ISys {
 public:
 	CSys();
@@ -248,8 +272,9 @@ long CSys::LoadLibrary(const char *lib)
 
 	Q_snprintf(absolute_lib, sizeof(absolute_lib), "%s/%s", cwd, lib);
 
+
 #ifdef LAUNCHER_FIXES
-	void *hDll = dlopen(absolute_lib, RTLD_NOW | RTLD_DEEPBIND | RTLD_LOCAL);
+	void *hDll = dlopen(absolute_lib, REHLDS_DLOPEN_FLAGS);
 #else // LAUNCHER_FIXES
 	void *hDll = dlopen(absolute_lib, RTLD_NOW);
 #endif // LAUNCHER_FIXES

@@ -34,3 +34,5 @@ docs/audit/tools/sched_probe
 /build-clang/
 /build-clang-ut/
 /build64dbg/
+/build64asan/
+/build64ubsan/
