@@ -10,7 +10,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_SHARED_LIBRARY_CXX_FLAGS "")
 
 set(COMPILE_FLAGS "-m32 -U_FORTIFY_SOURCE -DFORTIFY_SOURCE=0")
-set(LINK_FLAGS "-m32")
+
+# -flto is added to COMPILE_FLAGS below but must also reach the link step. GCC gets away
+# without it because GNU ld auto-loads the LTO plugin for GCC's IR objects; clang++ emits
+# pure LLVM bitcode and the plain link then fails with "file format not recognized". Passing
+# it at link is correct for both compilers.
+set(LINK_FLAGS "-m32 -flto")
 
 set(COMPILE_FLAGS "${COMPILE_FLAGS} -Wall -fno-exceptions -fno-strict-aliasing -fno-strict-overflow")
 

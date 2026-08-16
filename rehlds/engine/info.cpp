@@ -95,7 +95,10 @@ const char* EXT_FUNC Info_ValueForKey(const char *s, const char *lookup)
 		while (*s != '\\' && *s != '\0')
 			s++;
 
-		size_t valueLen = Q_min(s - value, MAX_KV_LEN - 1);
+		// s - value is ptrdiff_t, which is int on i386 but long on LP64, so the two
+		// arguments stop having a common type there and Q_min (a template) fails to
+		// deduce. Both values are non-negative and small; make the type explicit.
+		size_t valueLen = Q_min((size_t)(s - value), (size_t)(MAX_KV_LEN - 1));
 
 		if (keyLen == lookupLen && !Q_strncmp(key, lookup, lookupLen))
 		{

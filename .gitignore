@@ -30,3 +30,6 @@ docs/audit/tools/sched_probe
 
 /build-nofallback/
 /build-rel-nofb/
+/build64/
+/build-clang/
+/build-clang-ut/

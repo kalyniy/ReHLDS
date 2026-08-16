@@ -62,8 +62,23 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_SHARED_LIBRARY_CXX_FLAGS "")
 set(CMAKE_SHARED_LIBRARY_LINK_CXX_FLAGS "")
 
-set(COMPILE_FLAGS "-m32 -U_FORTIFY_SOURCE -DFORTIFY_SOURCE=0")
-set(LINK_FLAGS "-m32")
+# EXPERIMENTAL, for portability reconnaissance only. 64 does not produce a working server
+# and is not expected to yet -- see docs/audit/15-x86-64-recon.md. It exists so the port's
+# task list can be derived from real compiler output instead of from source reading.
+set(REHLDS_TARGET_BITS "32" CACHE STRING "Target word size: 32 (supported) or 64 (experimental, does not work)")
+set_property(CACHE REHLDS_TARGET_BITS PROPERTY STRINGS 32 64)
+
+if (REHLDS_TARGET_BITS STREQUAL "64")
+	set(ARCH_FLAG "-m64")
+	# A .so without -fPIC merely works by accident on i386; on x86-64 it fails to link with
+	# R_X86_64_32 relocations against .text, so PIC has to come back on.
+	set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+else()
+	set(ARCH_FLAG "-m32")
+endif()
+
+set(COMPILE_FLAGS "${ARCH_FLAG} -U_FORTIFY_SOURCE -DFORTIFY_SOURCE=0")
+set(LINK_FLAGS "${ARCH_FLAG}")
 
 set(COMPILE_FLAGS "${COMPILE_FLAGS} -Wall -fno-rtti -fno-exceptions -fno-strict-aliasing -fno-strict-overflow")
 
@@ -285,7 +300,11 @@ target_compile_definitions(engine PRIVATE
 	REHLDS_API
 	REHLDS_SELF
 	REHLDS_OPT_PEDANTIC
-	HAVE_OPT_STRTOOLS
+	# asmlib (lib/linux32/libaelf32.a) is a 32-bit-only static library with no source in
+	# tree. Without HAVE_OPT_STRTOOLS, public/strtools.h:108+ selects a complete libc
+	# fallback for Q_memcpy/Q_strlen/Q_stricmp and friends -- correct everywhere, at some
+	# cost on the hottest string paths.
+	$<$<STREQUAL:${REHLDS_TARGET_BITS},32>:HAVE_OPT_STRTOOLS>
 	USE_BREAKPAD_HANDLER
 	_LINUX
 	LINUX
@@ -319,11 +338,18 @@ else()
 	set(COMPAT_M_LIB -l:libm.so.6)
 endif()
 
+if (REHLDS_TARGET_BITS STREQUAL "32")
+	set(ARCH_ONLY_LIBS aelf32)
+else()
+	# aelf32 is a 32-bit static archive; see the HAVE_OPT_STRTOOLS note above.
+	set(ARCH_ONLY_LIBS "")
+endif()
+
 target_link_libraries(engine PRIVATE
 	dl
 	${COMPAT_RT_LIB}
 	${COMPAT_M_LIB}
-	aelf32
+	${ARCH_ONLY_LIBS}
 	bzip2
 	steam_api
 )
