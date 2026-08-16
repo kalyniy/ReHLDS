@@ -1311,6 +1311,12 @@ static void SV_ApplyHistoricalPose(edict_t *ent, sv_adjusted_positions_t *pos,
 	// rather than this field, so restoring it does not currently reach bone setup. Applied
 	// anyway for consistency and for mods that do read pev->gaitsequence.
 	ent->v.gaitsequence = (to && frac >= 0.5f) ? to->gaitsequence : from->gaitsequence;
+
+	pos->appliedangles[0] = ent->v.angles[0];
+	pos->appliedangles[1] = ent->v.angles[1];
+	pos->appliedangles[2] = ent->v.angles[2];
+	pos->appliedframe = ent->v.frame;
+	pos->appliedsequence = ent->v.sequence;
 }
 
 void SV_SetupMove(client_t *_host_client)
@@ -1604,12 +1610,24 @@ void SV_RestoreMove(client_t *_host_client)
 		// not.
 		if (pos->poserestore)
 		{
-			cli->edict->v.angles[0] = pos->oldangles[0];
-			cli->edict->v.angles[1] = pos->oldangles[1];
-			cli->edict->v.angles[2] = pos->oldangles[2];
-			cli->edict->v.frame = pos->oldframe;
-			cli->edict->v.sequence = pos->oldsequence;
-			cli->edict->v.gaitsequence = pos->oldgaitsequence;
+			// Only undo what is still ours. Game code runs between SV_SetupMove and here --
+			// PreThink, PM_Move, weapon fire, PostThink -- and may legitimately change the
+			// pose. The most visible case: a victim killed inside this window has just had
+			// its death animation set and StopAnimation() called, and blindly restoring the
+			// pre-death sequence froze the corpse permanently, because a corpse's animation
+			// is never rewritten again. The origin restore below guards the same way via
+			// initial_correction_org.
+			if (cli->edict->v.sequence == pos->appliedsequence
+				&& cli->edict->v.frame == pos->appliedframe
+				&& VectorCompare(cli->edict->v.angles, pos->appliedangles))
+			{
+				cli->edict->v.angles[0] = pos->oldangles[0];
+				cli->edict->v.angles[1] = pos->oldangles[1];
+				cli->edict->v.angles[2] = pos->oldangles[2];
+				cli->edict->v.frame = pos->oldframe;
+				cli->edict->v.sequence = pos->oldsequence;
+				cli->edict->v.gaitsequence = pos->oldgaitsequence;
+			}
 			pos->poserestore = 0;
 		}
 

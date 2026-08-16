@@ -59,6 +59,13 @@ typedef struct sv_adjusted_positions_s
 	float oldframe;
 	int oldsequence;
 	int oldgaitsequence;
+	// What we actually wrote. The restore compares against these and stands down if game
+	// code changed the pose during the window -- mirroring how the origin restore checks
+	// initial_correction_org. Without it, killing a victim inside the window overwrote the
+	// death animation ReGameDLL had just set.
+	vec3_t appliedangles;
+	float appliedframe;
+	int appliedsequence;
 } sv_adjusted_positions_t;
 
 typedef struct clc_func_s
