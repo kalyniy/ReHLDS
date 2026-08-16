@@ -1241,7 +1241,7 @@ entity_state_t *SV_FindEntInPack(int index, packet_entities_t *pack)
 
 // Shortest-arc interpolation between two Euler angles, so a rewind across the +-180 boundary
 // does not sweep the long way round.
-static float SV_LerpAngle(float from, float to, float frac)
+float SV_LerpAngle(float from, float to, float frac)
 {
 	float d = to - from;
 	while (d > 180.0f) d -= 360.0f;
@@ -1250,6 +1250,31 @@ static float SV_LerpAngle(float from, float to, float frac)
 	float r = from + d * frac;
 	while (r > 180.0f) r -= 360.0f;
 	while (r < -180.0f) r += 360.0f;
+	return r;
+}
+
+// Interpolate a studio frame, which is cyclic on [0, 256) exactly as an angle is cyclic on
+// [-180, 180).
+//
+// pev->frame wraps modulo 256 for looping sequences (ReGameDLL animating.cpp:33-36), so a
+// plain from + (to - from) * frac sweeps BACKWARDS through the whole animation whenever a
+// bracket straddles the wrap: from=250, to=6, frac=0.5 gives frame 128 -- the middle of the
+// cycle -- where the answer is 0. A run animation crosses the wrap once per cycle, so this
+// mis-poses a small but steady fraction of rewinds, in the code meant to make rewinds
+// accurate. Take the short way round, as SV_LerpAngle does for degrees.
+//
+// Non-looping sequences clamp at 255 instead of wrapping, so a large negative delta there is a
+// sequence restart -- whose true motion is also forward through the wrap. Short-path is correct
+// for both.
+float SV_LerpFrame(float from, float to, float frac)
+{
+	float d = to - from;
+	if (d > 128.0f) d -= 256.0f;
+	else if (d < -128.0f) d += 256.0f;
+
+	float r = from + d * frac;
+	if (r >= 256.0f) r -= 256.0f;
+	else if (r < 0.0f) r += 256.0f;
 	return r;
 }
 
@@ -1298,7 +1323,7 @@ static void SV_ApplyHistoricalPose(edict_t *ent, sv_adjusted_positions_t *pos,
 	if (to && to->sequence == from->sequence)
 	{
 		ent->v.sequence = from->sequence;
-		ent->v.frame = from->frame + (to->frame - from->frame) * frac;
+		ent->v.frame = SV_LerpFrame(from->frame, to->frame, frac);
 	}
 	else
 	{

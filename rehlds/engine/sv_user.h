@@ -117,6 +117,11 @@ int SV_UnlagCheckTeleport(vec_t *v1, vec_t *v2);
 void SV_GetTrueOrigin(int player, vec_t *origin);
 void SV_GetTrueMinMax(int player, float **fmin, float **fmax);
 entity_state_t *SV_FindEntInPack(int index, packet_entities_t *pack);
+// Cyclic interpolation helpers used by the historical-pose rewind. Non-static so the wrap
+// behaviour can be tested directly -- both had off-by-a-cycle bugs that are invisible to any
+// end-to-end test (docs/audit/23).
+float SV_LerpAngle(float from, float to, float frac);
+float SV_LerpFrame(float from, float to, float frac);
 void SV_SetupMove(client_t *_host_client);
 void SV_RestoreMove(client_t *_host_client);
 void SV_ParseStringCommand(client_t *pSenderClient);

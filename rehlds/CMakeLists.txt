@@ -277,6 +277,7 @@ set(UNITTESTS_SRCS
 	unittests/crc32c_tests.cpp
 	unittests/delta_tests.cpp
 	unittests/info_tests.cpp
+	unittests/lerp_tests.cpp
 	unittests/mathlib_tests.cpp
 	unittests/rehlds_tests_shared.cpp
 	unittests/rehlds_tests_shared.h

@@ -77,6 +77,24 @@ inline void xmm2vec(vec_t *v, const __m128 m)
 	_mm_store_ss(v + 2, _mm_shuffle_ps(m, m, 0x02));
 }
 
+// Load a 3d vector into 4d xmm, touching exactly 12 bytes.
+//
+// The natural _mm_loadu_ps(v) reads 16, running 4 bytes past the end of every vec3_t it is
+// handed. AddressSanitizer on the 32-bit production build catches this on the first map load
+// (Length() reading `corner` in Mod_LoadBrushModel_internal -- docs/audit/23). It has been
+// benign for years because a vec3_t is nearly always embedded in a larger struct, but a
+// vec3_t ending exactly on a page boundary faults, and the garbage in lane 3 can be a
+// denormal that slows the very ops it feeds.
+//
+// Every consumer here already discards lane 3 -- _mm_dp_ps masks it out, xmm2vec stores only
+// three floats, crossProduct3D's shuffles keep lane 3 in lane 3 -- so zeroing it instead of
+// loading rubbish preserves results exactly, and makes them deterministic where they were
+// previously whatever happened to sit after the vector. Mirrors xmm2vec on the load side.
+inline __m128 vec2xmm(const vec_t *v)
+{
+	return _mm_movelh_ps(_mm_loadl_pi(_mm_setzero_ps(), (const __m64 *)v), _mm_load_ss(v + 2));
+}
+
 FUNC_TARGET("sse4.1")
 inline __m128 dotProduct3D(__m128 v1, __m128 v2)
 {
@@ -111,8 +129,8 @@ int BoxOnPlaneSide(vec_t *emins, vec_t *emaxs, mplane_t *p)
 	double dist1, dist2;
 	int sides = 0;
 
-	__m128 emin = _mm_loadu_ps(emins);
-	__m128 emax = _mm_loadu_ps(emaxs);
+	__m128 emin = vec2xmm(emins);
+	__m128 emax = vec2xmm(emaxs);
 	avec4_t d1, d2;
 
 	// general case
@@ -207,7 +225,7 @@ void AngleVectors(const vec_t *angles, vec_t *forward, vec_t *right, vec_t *up)
 #endif // SWDS
 
 	__m128 s, c;
-	sincos_ps(_mm_mul_ps(_mm_loadu_ps(angles), _mm_load_ps(deg2rad)), &s, &c);
+	sincos_ps(_mm_mul_ps(vec2xmm(angles), _mm_load_ps(deg2rad)), &s, &c);
 
 	__m128 m1 = _mm_shuffle_ps(c, s, 0x90); // [cp][cp][sy][sr]
 	__m128 m2 = _mm_shuffle_ps(c, c, 0x09); // [cy][cr][cp][cp]
@@ -248,7 +266,7 @@ void AngleVectors(const vec_t *angles, vec_t *forward, vec_t *right, vec_t *up)
 void AngleVectorsTranspose(const vec_t *angles, vec_t *forward, vec_t *right, vec_t *up)
 {
 	__m128 s, c;
-	sincos_ps(_mm_mul_ps(_mm_loadu_ps(angles), _mm_load_ps(deg2rad)), &s, &c);
+	sincos_ps(_mm_mul_ps(vec2xmm(angles), _mm_load_ps(deg2rad)), &s, &c);
 
 	__m128 m1 = _mm_shuffle_ps(c, s, 0x90); // [cp][cp][sy][sr]
 	__m128 m2 = _mm_shuffle_ps(c, c, 0x09); // [cy][cr][cp][cp]
@@ -290,7 +308,7 @@ void AngleVectorsTranspose(const vec_t *angles, vec_t *forward, vec_t *right, ve
 void AngleMatrix(const vec_t *angles, float(*matrix)[4])
 {
 	__m128 s, c;
-	sincos_ps(_mm_mul_ps(_mm_loadu_ps(angles), _mm_load_ps(deg2rad)), &s, &c);
+	sincos_ps(_mm_mul_ps(vec2xmm(angles), _mm_load_ps(deg2rad)), &s, &c);
 
 	/*
 	matrix[0][1] = sr * sp * cy - cr * sy;
@@ -345,7 +363,7 @@ void AngleMatrix(const vec_t *angles, float(*matrix)[4])
 
 void VectorMA(const vec_t *veca, float scale, const vec_t *vecm, vec_t *out)
 {
-	xmm2vec(out, _mm_add_ps(_mm_mul_ps(_mm_set_ps1(scale), _mm_loadu_ps(vecm)), _mm_loadu_ps(veca)));
+	xmm2vec(out, _mm_add_ps(_mm_mul_ps(_mm_set_ps1(scale), vec2xmm(vecm)), vec2xmm(veca)));
 }
 
 float _DotProduct(const vec_t *v1, const vec_t *v2)
@@ -356,22 +374,22 @@ float _DotProduct(const vec_t *v1, const vec_t *v2)
 	// 0x71 = 0b01110001 - mask for multiplying operands and result
 	// dpps isn't binary compatible with separate sse2 instructions (max difference is about 0.0002f, but usually < 0.00001f)
 
-	return _mm_cvtss_f32(dotProduct3D(_mm_loadu_ps(v1), _mm_loadu_ps(v2)));
+	return _mm_cvtss_f32(dotProduct3D(vec2xmm(v1), vec2xmm(v2)));
 }
 
 float Length(const vec_t *v)
 {
-	return _mm_cvtss_f32(length3D(_mm_loadu_ps(v))); // rsqrt is very inaccurate :(
+	return _mm_cvtss_f32(length3D(vec2xmm(v))); // rsqrt is very inaccurate :(
 }
 
 float Length2D(const vec_t *v)
 {
-	return _mm_cvtss_f32(length2D(_mm_loadu_ps(v)));
+	return _mm_cvtss_f32(length2D(vec2xmm(v)));
 }
 
 void CrossProduct(const vec_t *v1, const vec_t *v2, vec_t *cross)
 {
-	xmm2vec(cross, crossProduct3D(_mm_loadu_ps(v1), _mm_loadu_ps(v2)));
+	xmm2vec(cross, crossProduct3D(vec2xmm(v1), vec2xmm(v2)));
 }
 
 void R_ConcatTransforms(float in1[3][4], float in2[3][4], float out[3][4])
