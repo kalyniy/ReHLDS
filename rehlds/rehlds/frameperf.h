@@ -45,8 +45,14 @@ enum FramePerfSubsystem
 	FP_SUB_READPACKETS = 0,	// SV_ReadPackets: parse move, SV_RunCmd, lag comp, weapons, traces
 	FP_SUB_PHYSICS,		// SV_Physics + pfnStartFrame
 	FP_SUB_SNAPSHOT,	// SV_SendClientMessages: fullpack, delta encode, netchan
+	FP_SUB_STARTFRAME,	// gEntityInterface.pfnStartFrame, called from inside SV_Physics
 	FP_SUB_COUNT
 };
 
 void FramePerf_SubBegin(int subsystem);
 void FramePerf_SubEnd(int subsystem);
+
+// Per-frame edict accounting for SV_Physics. Separates the fixed cost of walking every
+// edict from the work actually done, which is what decides whether raising sys_ticrate is
+// affordable: measured, per-frame physics cost fell only 13% when the frame rate doubled.
+void FramePerf_PhysicsCounts(uint32 visited, uint32 simulated);

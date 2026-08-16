@@ -42,7 +42,12 @@ static const char *const g_subNames[FP_SUB_COUNT] = {
 	"SV_ReadPackets",
 	"SV_Physics",
 	"SV_SendClientMsgs",
+	"  pfnStartFrame",	// nested inside SV_Physics, hence the indent
 };
+
+// Edict accounting for the frame currently executing.
+static uint32 g_physVisited, g_physSimulated;
+static uint64 g_physVisitedTotal, g_physSimulatedTotal;
 
 static uint64 FramePerf_Now()
 {
@@ -59,6 +64,7 @@ static void FramePerf_Reset()
 	g_deadline_index = 0;
 	g_total_admitted = 0;
 	g_total_rejected = 0;
+	g_physVisitedTotal = g_physSimulatedTotal = 0;
 	g_epoch_ns = FramePerf_Now();
 
 	float fps = sys_ticrate.value;
@@ -105,7 +111,19 @@ void FramePerf_OnFrameBegin()
 		return;
 
 	Q_memset(g_subAccum, 0, sizeof(g_subAccum));
+	g_physVisited = g_physSimulated = 0;
 	g_frame_start_ns = FramePerf_Now();
+}
+
+void FramePerf_PhysicsCounts(uint32 visited, uint32 simulated)
+{
+	if (!g_enabled)
+		return;
+
+	g_physVisited = visited;
+	g_physSimulated = simulated;
+	g_physVisitedTotal += visited;
+	g_physSimulatedTotal += simulated;
 }
 
 void FramePerf_SubBegin(int subsystem)
@@ -294,6 +312,14 @@ static void FramePerf_Dump_f()
 		(unsigned long long)overruns, (unsigned long long)early);
 	Con_Printf("  rejected iterations per admitted frame (window avg)=%.2f\n",
 		n ? (double)rejected_in_window / (double)n : 0.0);
+
+	if (g_physVisitedTotal)
+	{
+		Con_Printf("  SV_Physics edicts: %.1f visited/frame, %.1f simulated/frame (%.1f%% of the walk does work)\n",
+			(double)g_physVisitedTotal / (double)g_total_admitted,
+			(double)g_physSimulatedTotal / (double)g_total_admitted,
+			100.0 * (double)g_physSimulatedTotal / (double)g_physVisitedTotal);
+	}
 
 	if (g_bSchedDeadlineActive)
 		Con_Printf("  deadline source: -pingboost 4 scheduler (real deadlines), skipped=%llu\n",

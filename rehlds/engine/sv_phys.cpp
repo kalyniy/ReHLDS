@@ -1473,12 +1473,20 @@ void SV_Physics()
 {
 	// let the progs know that a new frame has started
 	gGlobalVariables.time = g_psv.time;
+	FramePerf_SubBegin(FP_SUB_STARTFRAME);
 	gEntityInterface.pfnStartFrame();
+	FramePerf_SubEnd(FP_SUB_STARTFRAME);
+
+	// Instrumentation only: separate the fixed cost of walking every edict from the edicts
+	// that actually get simulated. Per-frame physics cost fell only 13% when the frame rate
+	// was doubled, which suggests the walk dominates; this measures it.
+	uint32 physVisited = 0, physSimulated = 0;
 
 	// treat each object in turn
 	for (int i = 0; i < g_psv.num_edicts; i++)
 	{
 		edict_t *ent = &g_psv.edicts[i];
+		physVisited++;
 		if (ent->free)
 			continue;
 
@@ -1491,6 +1499,7 @@ void SV_Physics()
 		if (i > 0 && i <= g_psvs.maxclients)
 			continue;
 
+		physSimulated++;
 		SV_CheckMovingGround(ent, host_frametime);
 
 		switch (ent->v.movetype)
@@ -1532,6 +1541,8 @@ void SV_Physics()
 
 	if (gGlobalVariables.force_retouch != 0.0f)
 		gGlobalVariables.force_retouch = gGlobalVariables.force_retouch - 1.0f;
+
+	FramePerf_PhysicsCounts(physVisited, physSimulated);
 }
 
 trace_t SV_Trace_Toss(edict_t *ent, edict_t *ignore)
