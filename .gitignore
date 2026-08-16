@@ -24,3 +24,6 @@ rehlds/version/appversion.h
 # local build trees
 /build/
 /build-release/
+
+# scheduler probe binary
+docs/audit/tools/sched_probe
