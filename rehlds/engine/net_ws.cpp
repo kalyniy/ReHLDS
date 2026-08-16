@@ -1092,6 +1092,10 @@ qboolean g_bSchedDeadlineActive = FALSE;
 // rather than against frameperf's own independently-phased synthetic one.
 uint64 g_SchedFrameDeadlineNs = 0;
 
+// Deadlines skipped because the previous frame overran. A non-zero and growing value is
+// the honest signal that the configured sys_ticrate is not sustainable on this host.
+uint64 g_SchedMissedDeadlines = 0;
+
 #ifndef _WIN32
 #include <sys/prctl.h>
 
@@ -1140,6 +1144,15 @@ DLL_EXPORT void NET_Sleep_Deadline()
 
 	if (deadline_ns <= now)
 	{
+		// The previous frame overran. Skip the deadlines that have already passed and
+		// wait for the next one -- do NOT return here to run an immediate catch-up frame.
+		// Such a frame is admitted with ~0 elapsed time, so it advances the simulation by
+		// nothing while paying for a full frame of physics, thinks and snapshot work, and
+		// it makes host_frametime ~0 (host_cmd.cpp:453 divides by it). Stock
+		// Host_FilterTime made that state unreachable; since this scheduler stands that
+		// gate down, it has to preserve the guarantee itself.
+		g_SchedMissedDeadlines++;
+
 		if (now - deadline_ns > REBASE_THRESHOLD_NS)
 		{
 			deadline_ns = now + period_ns;
@@ -1152,7 +1165,6 @@ DLL_EXPORT void NET_Sleep_Deadline()
 				deadline_ns += period_ns;
 			} while (deadline_ns <= now);
 		}
-		return;
 	}
 
 	uint64 spin_ns = (uint64)(sv_rehlds_sched_spin_us.value * 1000.0f);

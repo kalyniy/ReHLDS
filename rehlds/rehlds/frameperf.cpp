@@ -236,7 +236,8 @@ static void FramePerf_Dump_f()
 		n ? (double)rejected_in_window / (double)n : 0.0);
 
 	if (g_bSchedDeadlineActive)
-		Con_Printf("  deadline source: -pingboost 4 scheduler (real deadlines)\n");
+		Con_Printf("  deadline source: -pingboost 4 scheduler (real deadlines), skipped=%llu\n",
+			(unsigned long long)g_SchedMissedDeadlines);
 	else
 		Con_Printf("  NOTE: the deadline above is synthetic. This scheduler does not\n"
 		           "        target one; see docs/audit/01-frame-scheduler.md.\n");
