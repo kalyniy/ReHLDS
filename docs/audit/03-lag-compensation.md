@@ -163,6 +163,25 @@ ducking at trace time gets crouch hitboxes anchored to the standing origin.
 
 ## 3. Jumping, reloading and dying victims are not compensated at all
 
+> **MEASURED, AND LARGELY REFUTED — see `12-real-client-lagcomp.md`.**
+>
+> The mechanism below is real: the code path fires, and it was observed firing. But the
+> predicted *magnitude* was wrong by three orders of magnitude. Over 46,328 victim
+> evaluations from a real connected client, `EF_NOINTERP` accounted for **18 exclusions —
+> 0.04 %**, not the dominant effect this section anticipated.
+>
+> This section called it "the most directly falsifiable claim in this document" and
+> suggested it "may well dominate in practice". It does not. Measurement disagreed with
+> source-derived reasoning, and measurement wins.
+>
+> The dominant exclusion is `health <= 0` at 9.46 %, which is correct behaviour — dead
+> players should not be rewound. Overall **90.4 % of victim evaluations were compensated.**
+>
+> The original reasoning is preserved below because it is still a correct reading of the
+> code; what it lacked was the observation that `SV_CleanupEnts` clears the flag every
+> server frame, so it is set for roughly one frame in a thousand while snapshots are sampled
+> at the update rate. The window for it to land in a stored snapshot is therefore tiny.
+
 Independent of the pose problem, and arguably easier to observe. `SV_SetupMove` walks the
 frame history and disqualifies a victim outright if **any** scanned frame carries
 `EF_NOINTERP` (`sv_user.cpp:1341-1342`):
