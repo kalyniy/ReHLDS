@@ -29,7 +29,7 @@
 
 #if defined(__GNUC__)
 #include <cpuid.h>
-#elif _MSC_VER >= 1400 && !defined(ASMLIB_H)
+#elif _MSC_VER >= 1400 && !(defined(ASMLIB_H) && defined(HAVE_OPT_STRTOOLS))
 #include <intrin.h>	// __cpuidex
 #endif
 
@@ -43,11 +43,17 @@
 
 cpuinfo_t cpuinfo;
 
+// asmlib.h is included unconditionally by precompiled.h, so ASMLIB_H is defined even in
+// builds that do not LINK asmlib -- for example any 64-bit build, since lib/linux32/
+// libaelf32.a is a 32-bit archive. Gating on ASMLIB_H alone therefore called cpuid_ex()
+// from a library that was not linked, which links fine (undefined symbols are permitted in
+// a shared object) and then fails at dlopen with "undefined symbol: cpuid_ex".
+// strtools.h:67 already requires both symbols; match it.
 void Sys_CheckCpuInstructionsSupport(void)
 {
 	unsigned int cpuid_data[4];
 
-#if defined ASMLIB_H
+#if defined(ASMLIB_H) && defined(HAVE_OPT_STRTOOLS)
 	cpuid_ex((int *)cpuid_data, 1, 0);
 #elif defined(__GNUC__)
 	__get_cpuid(0x1, &cpuid_data[0], &cpuid_data[1], &cpuid_data[2], &cpuid_data[3]);
@@ -62,7 +68,7 @@ void Sys_CheckCpuInstructionsSupport(void)
 	cpuinfo.popcnt = (cpuid_data[2] & POPCNT_FLAG) ? 1 : 0;
 	cpuinfo.avx = (cpuid_data[2] & AVX_FLAG) ? 1 : 0;
 
-#if defined ASMLIB_H
+#if defined(ASMLIB_H) && defined(HAVE_OPT_STRTOOLS)
 	cpuid_ex((int *)cpuid_data, 7, 0);
 #elif defined(__GNUC__)
 	__get_cpuid(0x7, &cpuid_data[0], &cpuid_data[1], &cpuid_data[2], &cpuid_data[3]);

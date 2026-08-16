@@ -11,8 +11,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Avoid -rdynamic -fPIC options
 set(CMAKE_SHARED_LIBRARY_LINK_CXX_FLAGS "")
 
-set(COMPILE_FLAGS "-m32 -fno-pic -fno-pie -U_FORTIFY_SOURCE -DFORTIFY_SOURCE=0")
-set(LINK_FLAGS "-m32 -no-pie -Wl,--no-export-dynamic")
+set(COMPILE_FLAGS "${ARCH_FLAG} -fno-pic -fno-pie -U_FORTIFY_SOURCE -DFORTIFY_SOURCE=0")
+set(LINK_FLAGS "${ARCH_FLAG} -no-pie -Wl,--no-export-dynamic")
 
 set(COMPILE_FLAGS "${COMPILE_FLAGS} -Wall -fno-exceptions -fno-strict-aliasing -fno-strict-overflow")
 

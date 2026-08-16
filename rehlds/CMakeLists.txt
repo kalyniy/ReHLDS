@@ -73,8 +73,15 @@ if (REHLDS_TARGET_BITS STREQUAL "64")
 	# A .so without -fPIC merely works by accident on i386; on x86-64 it fails to link with
 	# R_X86_64_32 relocations against .text, so PIC has to come back on.
 	set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+	set(ENGINE_PIC ON)
+	# engine_i486 is an i386 name. Follow ReGameDLL/Xash3D's convention instead so the two
+	# architectures can coexist in one install (common/port.h:112-116 already defines
+	# SO_ARCH_SUFFIX "_amd64.so" for this and has never been used).
+	set(ENGINE_OUTPUT_NAME engine_amd64)
 else()
 	set(ARCH_FLAG "-m32")
+	set(ENGINE_PIC OFF)
+	set(ENGINE_OUTPUT_NAME engine_i486)
 endif()
 
 set(COMPILE_FLAGS "${ARCH_FLAG} -U_FORTIFY_SOURCE -DFORTIFY_SOURCE=0")
@@ -221,6 +228,7 @@ set(ENGINE_SRCS
 	engine/snd_null.cpp
 	engine/sse_mathfun.cpp
 	engine/public_amalgamation.cpp
+	$<$<STREQUAL:${REHLDS_TARGET_BITS},64>:${PROJECT_SOURCE_DIR}/engine/steam_stub_64.cpp>
 	rehlds/flight_recorder.cpp
 	rehlds/FlightRecorderImpl.cpp
 	rehlds/frameperf.cpp
@@ -340,9 +348,14 @@ endif()
 
 if (REHLDS_TARGET_BITS STREQUAL "32")
 	set(ARCH_ONLY_LIBS aelf32)
+	set(STEAM_LIB steam_api)
 else()
 	# aelf32 is a 32-bit static archive; see the HAVE_OPT_STRTOOLS note above.
 	set(ARCH_ONLY_LIBS "")
+	# The bundled libsteam_api.so is 32-bit, and the modern 64-bit one implements
+	# SteamGameServer015 against these SteamGameServer011 headers. engine/steam_stub_64.cpp
+	# supplies the symbols instead. See docs/audit/16-steam-64bit.md.
+	set(STEAM_LIB "")
 endif()
 
 target_link_libraries(engine PRIVATE
@@ -351,7 +364,7 @@ target_link_libraries(engine PRIVATE
 	${COMPAT_M_LIB}
 	${ARCH_ONLY_LIBS}
 	bzip2
-	steam_api
+	${STEAM_LIB}
 )
 
 if (USE_STATIC_LIBSTDC)
@@ -364,9 +377,10 @@ set(LINK_FLAGS "${LINK_FLAGS} \
 	-L${PROJECT_SOURCE_DIR}/lib/linux32")
 
 set_target_properties(engine PROPERTIES
-	OUTPUT_NAME engine_i486
+	OUTPUT_NAME ${ENGINE_OUTPUT_NAME}
 	PREFIX ""
 	COMPILE_FLAGS ${COMPILE_FLAGS}
 	LINK_FLAGS ${LINK_FLAGS}
-	POSITION_INDEPENDENT_CODE OFF
+	# Non-PIC is an i386-only luxury; x86-64 shared objects require it.
+	POSITION_INDEPENDENT_CODE ${ENGINE_PIC}
 )

@@ -33,7 +33,14 @@
 #ifdef _WIN32
 	#define ENGINE_LIB "swds.dll"
 #else
-	#define ENGINE_LIB "engine_i486.so"
+	// The launcher dlopens this by name, so it has to match the engine's OUTPUT_NAME.
+	// common/port.h:112-116 has defined SO_ARCH_SUFFIX "_amd64.so" for x86-64 since forever
+	// without a single reference; this is what it was for.
+	#if defined(__x86_64__)
+		#define ENGINE_LIB "engine_amd64.so"
+	#else
+		#define ENGINE_LIB "engine_i486.so"
+	#endif
 #endif // _WIN32
 
 class IDedicatedServerAPI : public IBaseInterface

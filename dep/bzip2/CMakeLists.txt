@@ -21,5 +21,6 @@ include_directories(
 
 add_library(bzip2 STATIC ${BZIP2_SRCS})
 set_target_properties(bzip2 PROPERTIES
-	COMPILE_FLAGS "-m32"
+	# Follow the parent build's word size instead of hardcoding i386.
+	COMPILE_FLAGS "${ARCH_FLAG}"
 )

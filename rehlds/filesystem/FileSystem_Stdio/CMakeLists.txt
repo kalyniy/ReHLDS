@@ -9,8 +9,14 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Avoid -fPIC option
 set(CMAKE_SHARED_LIBRARY_CXX_FLAGS "")
 
-set(COMPILE_FLAGS "-m32 -U_FORTIFY_SOURCE -DFORTIFY_SOURCE=0")
-set(LINK_FLAGS "-m32")
+if (REHLDS_TARGET_BITS STREQUAL "64")
+	set(FS_PIC ON)
+else()
+	set(FS_PIC OFF)
+endif()
+
+set(COMPILE_FLAGS "${ARCH_FLAG} -U_FORTIFY_SOURCE -DFORTIFY_SOURCE=0")
+set(LINK_FLAGS "${ARCH_FLAG}")
 
 set(COMPILE_FLAGS "${COMPILE_FLAGS} -Wall -fno-exceptions -fno-strict-aliasing -fno-strict-overflow")
 
@@ -104,5 +110,6 @@ set_target_properties(filesystem_stdio PROPERTIES
 	PREFIX ""
 	COMPILE_FLAGS ${COMPILE_FLAGS}
 	LINK_FLAGS ${LINK_FLAGS}
-	POSITION_INDEPENDENT_CODE OFF
+	# x86-64 shared objects require PIC; non-PIC is an i386-only luxury.
+	POSITION_INDEPENDENT_CODE ${FS_PIC}
 )
