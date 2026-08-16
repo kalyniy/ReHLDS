@@ -353,8 +353,18 @@ retracted (`docs/audit/10`).
    production-ready. Note `mathlib_e.h:35-40` exists to compensate for i386 x87 excess
    precision, so cross-architecture *bit-identical* gameplay is not achievable — tolerances
    must be defined per quantity.
-5. **The hitbox fix.** Deferred by owner preference. Spans both repos: `m_flGaityaw` supplies
-   the root bone matrix yaw, lives in ReGameDLL, and is neither networked nor snapshotted.
+5. **The hitbox fix — gait yaw.** Spans both repos and is now fully designed in
+   `docs/audit/24`. ReGameDLL overwrites the model's root yaw with the live `m_flGaityaw`
+   (`animation.cpp:1183`), so the engine-side angle rewind never reaches hitbox orientation, and
+   the value cannot be recomputed because it is produced by a stateful filter. The key enabler:
+   lag compensation reads the **server's own snapshot history**, not network data, so any
+   `entity_state_t` field the GameDLL fills in `AddToFullPack` is rewindable with **no protocol
+   change** — `state->fuser1..4` / `vuser1..4` / `iuser1..4` are all free for players. Not
+   implemented on purpose: it cannot be validated without a real client.
+6. **Sanitize the lag-comp path.** ASan is now clean on the production 32-bit config
+   (`docs/audit/23`), but bots never enter `SV_SetupMove`, so the rewind and pose-restore code
+   has never run under a sanitizer. Needs one human connected — cheap, and the highest-value
+   remaining sanitizer target.
 
 ## 10. Things that will waste your time if you do not know them
 
@@ -363,7 +373,18 @@ retracted (`docs/audit/10`).
 - ASan cannot load a library opened with `RTLD_DEEPBIND`; the code drops that flag under
   sanitizers automatically.
 - The frame instrumentation ring holds 8192 samples — at 1000 Hz that is the last ~8 seconds,
-  not the whole run. Whole-window CPU is the more stable metric for comparisons.
+  not the whole run. Whole-window CPU is the more stable metric for comparisons. This bites:
+  a `bench.sh` run once reported a p50 four times lower than its pair with *identical* edict
+  counts and admitted frames, purely because its 8.2 s window landed on a round transition
+  (`docs/audit/23`).
+- Sanitizer coverage depends on build flags in a way that hides bugs. The 64-bit build compiles
+  out `REHLDS_JIT` and `REHLDS_SSE`, so sanitizing it leaves the delta JIT and the entire SSE
+  mathlib — the hottest code that actually ships — completely untested. Both defects in
+  `docs/audit/23` were invisible to a 64-bit run by construction.
+- Bot-based A/B cannot resolve small effects. Within-condition p95 spread across identical runs
+  reached 75%, larger than any between-condition gap. For anything below ~10%, use an isolated
+  microbenchmark with hardware counters (`docs/audit/tools/loadbench.cpp`) — and check the
+  mechanism with a control, because the obvious explanation is often wrong.
 - HLTV is unported and is skipped automatically for non-32-bit-x86 builds.
 - `USE_STATIC_LIBSTDC=ON` is needed to run against a stock steamcmd HLDS install, which
   bundles an ancient `libstdc++` and whose `$ORIGIN` runpath wins over the system one.

@@ -1,6 +1,6 @@
 # Project Summary — Findings, Fixes, Gotchas
 
-A synthesis of `docs/audit/00`–`21`. Those are chronological research logs; this is the
+A synthesis of `docs/audit/00`–`24`. Those are chronological research logs; this is the
 consolidated result. Where a claim was later refuted, the refutation is what appears here.
 
 ---
@@ -19,6 +19,10 @@ consolidated result. Where a claim was later refuted, the refutation is what app
 | **`NOXREFCHECK`** | hardcoded i386 stack asm that *assembles* on x86-64 and reads garbage — the diagnostic was silently lying | 20 §3 |
 | **`sys_ticrate` warning** | tells operators when their setting does nothing | 06 §6 |
 | **portability**: JIT/SSE selectable, x86-64 and AArch64 builds, Clang tree-wide | ARM64 and x86-64 servers run CS | 11, 15, 16, 20 |
+| **`vec2xmm`** load helper | `_mm_loadu_ps` read **16 bytes from every 12-byte `vec3_t`** in 11 places; ASan halts on the first map load. Also removes a store-forwarding stall (IPC 0.57 → 2.98 in isolation) | 23 |
+| **`SV_LerpFrame`** | our own pose rewind blended studio frames linearly, but `pev->frame` is cyclic on `[0,256)`; a bracket across the wrap posed the victim mid-animation | 23 |
+| **`jitasm` null `memset`** | `memset(NULL, 0xCC, 0)` on **every server start**; UB that lets the compiler delete later null checks | 23 |
+| **`crc32c` SSE loop bound** | byte index compared against a word count — the fast path did **a quarter of its intended work**. Output was always correct, so no test could see it | 23 |
 
 Instrumentation added: frame interval / deadline lateness / overruns, per-subsystem timers,
 lag-comp outcome counters, studio-cache hit rate, and rewound-pose divergence.
@@ -139,13 +143,23 @@ Source reading is reliable for *what the code does* and unreliable for *how much
 ## 7. Outstanding
 
 1. **Hit registration** — §3. The largest remaining competitive item; needs a real client and
-   spans both repos.
-2. **Lag-comp cost with 10 real players** — the one unmeasured hotspot. The 1.7 µs
+   spans both repos. The remaining piece is **gait yaw**: ReGameDLL overwrites the model's root
+   yaw with the live `m_flGaityaw` (`animation.cpp:1183`), so the engine-side angle rewind never
+   reaches hitbox orientation. `docs/audit/24` designs the fix and establishes it costs nothing
+   on the wire — lag compensation reads the server's own snapshot history, not network data, so
+   any `entity_state_t` field the GameDLL fills is rewindable whether or not `delta.lst`
+   transmits it. Deliberately unimplemented: it cannot be validated without a real client, and
+   shipping unexercised hit-registration changes is what produced the frozen-corpse regression.
+2. **The lag-comp path is still unsanitized.** ASan now reports 0 errors on the production
+   32-bit build, but bots never enter `SV_SetupMove` (`SV_RunCmd` gates it on
+   `!fakeclient`), so the rewind and pose-restore code has never been under a sanitizer. This is
+   the highest-value place to point ASan next, and it needs one human connected.
+3. **Lag-comp cost with 10 real players** — the one unmeasured hotspot. The 1.7 µs
    `SV_ReadPackets` figure excludes it entirely, because bots never trigger it.
-3. **Gameplay differential testing** — nothing here has been compared against the frozen
+4. **Gameplay differential testing** — nothing here has been compared against the frozen
    `baseline-x86-32` reference. Note `mathlib_e.h:35-40` exists to compensate for i386 x87
    excess precision, so cross-architecture *bit-identical* output is not achievable;
    tolerances must be defined per quantity.
-4. **A deterministic workload** (demo replay or scripted Protocol 48 clients) — gates 2 and 3
+5. **A deterministic workload** (demo replay or scripted Protocol 48 clients) — gates 3 and 4
    simultaneously, and would also make compiler comparison resolvable.
-5. **Real ARM64 hardware** — everything AArch64 so far is emulated.
+6. **Real ARM64 hardware** — everything AArch64 so far is emulated.
