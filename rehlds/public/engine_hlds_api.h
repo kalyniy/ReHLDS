@@ -38,6 +38,8 @@
 	// without a single reference; this is what it was for.
 	#if defined(__x86_64__)
 		#define ENGINE_LIB "engine_amd64.so"
+	#elif defined(__aarch64__)
+		#define ENGINE_LIB "engine_arm64.so"
 	#else
 		#define ENGINE_LIB "engine_i486.so"
 	#endif

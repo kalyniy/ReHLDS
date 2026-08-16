@@ -1,0 +1,12 @@
+{
+	"InstallScripts" : 
+	[
+		"/home/dan/projects/ReHLDS/build64rel/cmake_install.cmake",
+		"/home/dan/projects/ReHLDS/build64rel/rehlds/cmake_install.cmake",
+		"/home/dan/projects/ReHLDS/build64rel/rehlds/bzip2/cmake_install.cmake",
+		"/home/dan/projects/ReHLDS/build64rel/rehlds/dedicated/cmake_install.cmake",
+		"/home/dan/projects/ReHLDS/build64rel/rehlds/filesystem/cmake_install.cmake",
+		"/home/dan/projects/ReHLDS/build64rel/rehlds/filesystem/FileSystem_Stdio/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

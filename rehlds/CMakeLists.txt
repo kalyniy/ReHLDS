@@ -71,15 +71,13 @@ set_property(CACHE REHLDS_TARGET_BITS PROPERTY STRINGS 32 64)
 # Architecture selection. REHLDS_TARGET_BITS picks the x86 word size; a CMake toolchain
 # file (cmake/toolchain-aarch64.cmake) selects AArch64 instead, in which case there is no
 # -m flag and the x86-only tuning flags below must be suppressed.
-if (CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")
-	set(REHLDS_ARCH_X86 FALSE)
-	set(ARCH_FLAG "")
+# REHLDS_ARCH_X86 and ARCH_FLAG come from the top-level CMakeLists; only engine-specific
+# properties are decided here.
+if (NOT REHLDS_ARCH_X86)
 	set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 	set(ENGINE_PIC ON)
 	set(ENGINE_OUTPUT_NAME engine_arm64)
 elseif (REHLDS_TARGET_BITS STREQUAL "64")
-	set(REHLDS_ARCH_X86 TRUE)
-	set(ARCH_FLAG "-m64")
 	# A .so without -fPIC merely works by accident on i386; on x86-64 it fails to link with
 	# R_X86_64_32 relocations against .text, so PIC has to come back on.
 	set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -89,8 +87,6 @@ elseif (REHLDS_TARGET_BITS STREQUAL "64")
 	# SO_ARCH_SUFFIX "_amd64.so" for this and has never been used).
 	set(ENGINE_OUTPUT_NAME engine_amd64)
 else()
-	set(REHLDS_ARCH_X86 TRUE)
-	set(ARCH_FLAG "-m32")
 	set(ENGINE_PIC OFF)
 	set(ENGINE_OUTPUT_NAME engine_i486)
 endif()

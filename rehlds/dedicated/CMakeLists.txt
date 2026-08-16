@@ -46,8 +46,12 @@ if ("$ENV{CXX}" MATCHES "icpc")
 else()
 	# Produce code optimized for the most common IA32/AMD64/EM64T processors.
 	# As new processors are deployed in the marketplace, the behavior of this option will change.
-	set(COMPILE_FLAGS "${COMPILE_FLAGS} \
-		-mtune=generic -msse3\
+	# -mtune=generic and -msse3 are x86-only; the AArch64 cross compiler rejects them.
+if (REHLDS_ARCH_X86)
+	set(COMPILE_FLAGS "${COMPILE_FLAGS} -mtune=generic -msse3")
+endif()
+
+set(COMPILE_FLAGS "${COMPILE_FLAGS} \
 		-fpermissive -fno-sized-deallocation\
 		-Wno-unused-result")
 
@@ -59,7 +63,10 @@ endif()
 
 # GCC >= 8.3
 if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 8.0)
-	set(COMPILE_FLAGS "${COMPILE_FLAGS} -fcf-protection=none")
+	# -fcf-protection is x86 CET and is rejected on AArch64.
+	if (REHLDS_ARCH_X86)
+		set(COMPILE_FLAGS "${COMPILE_FLAGS} -fcf-protection=none")
+	endif()
 endif()
 
 set(PROJECT_SRC_DIR

@@ -81,7 +81,14 @@
 
 static bool s_bShowDiag;
 #define DEBUG_MSG(...) if (s_bShowDiag) fprintf(stderr, ##__VA_ARGS__)
-#define DEBUG_BREAK() __asm__ __volatile__ ("int $3")
+// int $3 is the x86 breakpoint instruction; AArch64 spells it "brk #0".
+#if defined(__i386__) || defined(__x86_64__)
+	#define DEBUG_BREAK() __asm__ __volatile__ ("int $3")
+#elif defined(__aarch64__)
+	#define DEBUG_BREAK() __asm__ __volatile__ ("brk #0")
+#else
+	#define DEBUG_BREAK() __builtin_trap()
+#endif
 #define _COMPILE_TIME_ASSERT(pred) switch(0) {case 0:case pred:;}
 
 #define WRAP(fn, ret, ...)\

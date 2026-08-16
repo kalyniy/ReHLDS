@@ -9,10 +9,11 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Avoid -fPIC option
 set(CMAKE_SHARED_LIBRARY_CXX_FLAGS "")
 
-if (REHLDS_TARGET_BITS STREQUAL "64")
-	set(FS_PIC ON)
-else()
+# Shared objects need PIC everywhere except i386, where non-PIC works by accident.
+if (REHLDS_ARCH_X86 AND REHLDS_TARGET_BITS STREQUAL "32")
 	set(FS_PIC OFF)
+else()
+	set(FS_PIC ON)
 endif()
 
 set(COMPILE_FLAGS "${ARCH_FLAG} -U_FORTIFY_SOURCE -DFORTIFY_SOURCE=0")
@@ -33,8 +34,12 @@ if ("$ENV{CXX}" MATCHES "icpc")
 else()
 	# Produce code optimized for the most common IA32/AMD64/EM64T processors.
 	# As new processors are deployed in the marketplace, the behavior of this option will change.
-	set(COMPILE_FLAGS "${COMPILE_FLAGS} \
-		-mtune=generic -msse3\
+	# -mtune=generic and -msse3 are x86-only; the AArch64 cross compiler rejects them.
+if (REHLDS_ARCH_X86)
+	set(COMPILE_FLAGS "${COMPILE_FLAGS} -mtune=generic -msse3")
+endif()
+
+set(COMPILE_FLAGS "${COMPILE_FLAGS} \
 		-fpermissive -fno-sized-deallocation\
 		-Wno-unknown-pragmas -Wno-unused-variable -Wno-unused-result -Wno-unused-function\
 		-Wno-write-strings -Wno-sign-compare -Wno-strict-aliasing")
@@ -59,7 +64,10 @@ endforeach()
 
 # GCC >= 8.3
 if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 8.0)
-	set(COMPILE_FLAGS "${COMPILE_FLAGS} -fcf-protection=none")
+	# -fcf-protection is x86 CET and is rejected on AArch64.
+	if (REHLDS_ARCH_X86)
+		set(COMPILE_FLAGS "${COMPILE_FLAGS} -fcf-protection=none")
+	endif()
 endif()
 
 set(PROJECT_SRC_DIR

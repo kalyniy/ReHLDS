@@ -1,0 +1,2 @@
+/usr/bin/ar qc libbzip2.a CMakeFiles/bzip2.dir/src/blocksort.c.o CMakeFiles/bzip2.dir/src/bzlib.c.o CMakeFiles/bzip2.dir/src/compress.c.o CMakeFiles/bzip2.dir/src/crctable.c.o CMakeFiles/bzip2.dir/src/decompress.c.o CMakeFiles/bzip2.dir/src/huffman.c.o CMakeFiles/bzip2.dir/src/precompiled.c.o CMakeFiles/bzip2.dir/src/randtable.c.o
+/usr/bin/ranlib libbzip2.a
