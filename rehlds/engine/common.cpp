@@ -27,6 +27,7 @@
 */
 
 #include "precompiled.h"
+#include "rehlds/unaligned.h"
 
 char serverinfo[MAX_INFO_STRING];
 
@@ -737,7 +738,7 @@ uint32 MSG_ReadBits(int numbits)
 
 		if ((unsigned int)(bfread.nCurInputBit + numbits) <= 32)
 		{
-			result = (*(unsigned int *)bfread.pInByte >> bfread.nCurInputBit) & ROWBITTABLE[numbits];
+			result = (LoadUnaligned<unsigned int>(bfread.pInByte) >> bfread.nCurInputBit) & ROWBITTABLE[numbits];
 
 			uint32 bytes = (bfread.nCurInputBit + numbits) >> 3;
 
@@ -757,7 +758,7 @@ uint32 MSG_ReadBits(int numbits)
 		}
 		else
 		{
-			result = ((*(unsigned int *)(bfread.pInByte + 4) & ROWBITTABLE[bits]) << (32 - bfread.nCurInputBit)) | (*(unsigned int *)bfread.pInByte >> bfread.nCurInputBit);
+			result = ((LoadUnaligned<unsigned int>(bfread.pInByte + 4) & ROWBITTABLE[bits]) << (32 - bfread.nCurInputBit)) | (LoadUnaligned<unsigned int>(bfread.pInByte) >> bfread.nCurInputBit);
 			bfread.nCurInputBit = bits;
 			bfread.pInByte += 4;
 			bfread.nMsgReadCount += 4;
@@ -1019,7 +1020,7 @@ NOXREF int MSG_ReadWord(void)
 
 	if (msg_readcount + 2 <= net_message.cursize)
 	{
-		c = *(uint16 *)&net_message.data[msg_readcount];
+		c = LoadUnaligned<uint16>(&net_message.data[msg_readcount]);
 		msg_readcount += 2;
 	}
 	else
@@ -1037,7 +1038,7 @@ int MSG_ReadLong(void)
 
 	if (msg_readcount + 4 <= net_message.cursize)
 	{
-		c = *(uint32 *)&net_message.data[msg_readcount];
+		c = LoadUnaligned<uint32>(&net_message.data[msg_readcount]);
 		msg_readcount += 4;
 	}
 	else

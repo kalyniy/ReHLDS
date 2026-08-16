@@ -27,6 +27,7 @@
 */
 
 #include "precompiled.h"
+#include "rehlds/unaligned.h"
 
 #ifndef Defines_and_Variables_region
 
@@ -443,12 +444,12 @@ int DELTA_TestDelta(unsigned char *from, unsigned char *to, delta_t *pFields)
 			different = from[pTest->fieldOffset] != to[pTest->fieldOffset];
 			break;
 		case DT_SHORT:
-			different = *(uint16 *)&from[pTest->fieldOffset] != *(uint16 *)&to[pTest->fieldOffset];
+			different = LoadUnaligned<uint16>(&from[pTest->fieldOffset]) != LoadUnaligned<uint16>(&to[pTest->fieldOffset]);
 			break;
 		case DT_FLOAT:
 		case DT_INTEGER:
 		case DT_ANGLE:
-			different = *(uint32 *)&from[pTest->fieldOffset] != *(uint32 *)&to[pTest->fieldOffset];
+			different = LoadUnaligned<uint32>(&from[pTest->fieldOffset]) != LoadUnaligned<uint32>(&to[pTest->fieldOffset]);
 			break;
 #ifdef REHLDS_FIXES
 		// don't use multiplier when checking, to increase performance
@@ -533,13 +534,13 @@ void DELTA_MarkSendFields(unsigned char *from, unsigned char *to, delta_t *pFiel
 				pTest->flags |= FDT_MARK;
 			break;
 		case DT_SHORT:
-			if (*(uint16 *)&from[pTest->fieldOffset] != *(uint16 *)&to[pTest->fieldOffset])
+			if (LoadUnaligned<uint16>(&from[pTest->fieldOffset]) != LoadUnaligned<uint16>(&to[pTest->fieldOffset]))
 				pTest->flags |= FDT_MARK;
 			break;
 		case DT_FLOAT:
 		case DT_INTEGER:
 		case DT_ANGLE:
-			if (*(uint32 *)&from[pTest->fieldOffset] != *(uint32 *)&to[pTest->fieldOffset])
+			if (LoadUnaligned<uint32>(&from[pTest->fieldOffset]) != LoadUnaligned<uint32>(&to[pTest->fieldOffset]))
 				pTest->flags |= FDT_MARK;
 			break;
 
@@ -547,7 +548,7 @@ void DELTA_MarkSendFields(unsigned char *from, unsigned char *to, delta_t *pFiel
 #ifdef REHLDS_FIXES
 		case DT_TIMEWINDOW_8:
 		case DT_TIMEWINDOW_BIG:
-			if (*(uint32 *)&from[pTest->fieldOffset] != *(uint32 *)&to[pTest->fieldOffset])
+			if (LoadUnaligned<uint32>(&from[pTest->fieldOffset]) != LoadUnaligned<uint32>(&to[pTest->fieldOffset]))
 				pTest->flags |= FDT_MARK;
 			break;
 #else
@@ -666,7 +667,7 @@ void DELTA_WriteMarkedFields(unsigned char *from, unsigned char *to, delta_t *pF
 			}
 			else
 			{
-				uint16 i16 = *(uint16 *)&to[pTest->fieldOffset];
+				uint16 i16 = LoadUnaligned<uint16>(&to[pTest->fieldOffset]);
 				i16 = (uint16)((double)i16 * pTest->premultiply);
 				MSG_WriteBits(i16, pTest->significant_bits);
 			}
@@ -697,7 +698,7 @@ void DELTA_WriteMarkedFields(unsigned char *from, unsigned char *to, delta_t *pF
 			}
 			else
 			{
-				uint32 unsignedInt = *(uint32 *)&to[pTest->fieldOffset];
+				uint32 unsignedInt = LoadUnaligned<uint32>(&to[pTest->fieldOffset]);
 				if (pTest->premultiply < 0.9999 || pTest->premultiply > 1.0001)
 				{
 					unsignedInt = (uint32)((double)unsignedInt * pTest->premultiply);
@@ -905,14 +906,14 @@ int DELTA_ParseDelta(unsigned char *from, unsigned char *to, delta_t *pFields)
 				to[pTest->fieldOffset] = from[pTest->fieldOffset];
 				break;
 			case DT_SHORT:
-				*(uint16 *)&to[pTest->fieldOffset] = *(uint16 *)&from[pTest->fieldOffset];
+				StoreUnaligned<uint16>(&to[pTest->fieldOffset], LoadUnaligned<uint16>(&from[pTest->fieldOffset]));
 				break;
 			case DT_FLOAT:
 			case DT_INTEGER:
 			case DT_ANGLE:
 			case DT_TIMEWINDOW_8:
 			case DT_TIMEWINDOW_BIG:
-				*(uint32 *)&to[pTest->fieldOffset] = *(uint32 *)&from[pTest->fieldOffset];
+				StoreUnaligned<uint32>(&to[pTest->fieldOffset], LoadUnaligned<uint32>(&from[pTest->fieldOffset]));
 				break;
 			case DT_STRING:
 				Q_strcpy((char *)&to[pTest->fieldOffset], (char *)&from[pTest->fieldOffset]);
@@ -981,7 +982,7 @@ int DELTA_ParseDelta(unsigned char *from, unsigned char *to, delta_t *pFields)
 				{
 					d2 = d2 * pTest->postmultiply;
 				}
-				*(uint16 *)&to[pTest->fieldOffset] = (uint16)d2;
+				StoreUnaligned<uint16>(&to[pTest->fieldOffset], (uint16)d2);
 			}
 			break;
 		case DT_FLOAT:
@@ -1028,7 +1029,7 @@ int DELTA_ParseDelta(unsigned char *from, unsigned char *to, delta_t *pFields)
 				{
 					d2 = d2 * pTest->postmultiply;
 				}
-				*(uint32 *)&to[pTest->fieldOffset] = (uint32)d2;
+				StoreUnaligned<uint32>(&to[pTest->fieldOffset], (uint32)d2);
 			}
 			break;
 		case DT_ANGLE:
