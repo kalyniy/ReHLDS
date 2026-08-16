@@ -37,3 +37,7 @@ docs/audit/tools/sched_probe
 /build64asan/
 /build64ubsan/
 /build-cmp-*/
+/build-arm64*/
+/build64ut/
+/build64sse/
+/build32ubsan/

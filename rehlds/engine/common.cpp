@@ -395,6 +395,17 @@ void MSG_WBits_MaybeFlush() {
 
 void MSG_WriteBits(uint32 data, int numbits)
 {
+	// This block is gated on REHLDS_FIXES but uses SSE intrinsics, so it does not build off
+	// x86. The scalar twin further down is the ORIGINAL bit writer, not an equivalent one --
+	// falling back to it would silently drop the "enhanced and safe" overflow behaviour on
+	// non-x86. So provide an exact portable equivalent instead.
+	//
+	// The SSE version's 128-bit ops only ever touch the low 64-bit lane:
+	// _mm_cvtsi32_si128 puts data in the low lane with the high lane zeroed, _mm_slli_epi64
+	// shifts each lane independently, and OR-ing a zero high lane leaves sse_highbits
+	// untouched. So it is exactly pendingData.u64 |= (uint64)data << nCurOutputBit.
+	// The 64-bit shift is also why numbits == 32 does not invoke shift UB.
+#if defined(__i386__) || defined(__x86_64__)
 	uint32 maxval = _mm_cvtsi128_si32(_mm_slli_epi64(_mm_cvtsi32_si128(1), numbits)) - 1; //maxval = (1 << numbits) - 1
 	if (data > maxval)
 		data = maxval;
@@ -407,6 +418,15 @@ void MSG_WriteBits(uint32 data, int numbits)
 	pending = _mm_or_si128(pending, mmdata);
 
 	_mm_store_si128((__m128i*) &bfwrite.pendingData.u64, pending);
+#else
+	uint32 maxval = (uint32)((1ULL << numbits) - 1);
+	if (data > maxval)
+		data = maxval;
+
+	MSG_WBits_MaybeFlush();
+
+	bfwrite.pendingData.u64 |= (uint64)data << bfwrite.nCurOutputBit;
+#endif
 	bfwrite.nCurOutputBit += numbits;
 }
 

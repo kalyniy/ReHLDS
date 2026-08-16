@@ -28,6 +28,16 @@
 
 #include "precompiled.h"
 
+// _mm_prefetch is an x86 intrinsic and was used ungated. __builtin_prefetch is the portable
+// equivalent and lowers to PRFM on AArch64 and PREFETCHT0 on x86, so this is a rename rather
+// than a behaviour change.
+#if defined(__i386__) || defined(__x86_64__)
+	#define REHLDS_PREFETCH(addr, hint) _mm_prefetch((addr), (hint))
+#else
+	#define _MM_HINT_T0 3
+	#define REHLDS_PREFETCH(addr, hint) __builtin_prefetch((addr), 0, (hint))
+#endif
+
 typedef struct full_packet_entities_s
 {
 	int num_entities;
@@ -1854,7 +1864,13 @@ void SV_ChallengesInit()
 #ifdef REHLDS_FIXES
 	static_assert(sizeof(g_raw_challenge_buf) == 64u, "Invalid g_raw_challenge_buf size");
 	for (uint32_t& s : g_raw_challenge_buf.salt)
+#if defined(__i386__) || defined(__x86_64__)
 		s = __rdtsc() * rand();
+#else
+		// __rdtsc is x86-only. This seeds a challenge value, so any cheap high-resolution
+		// counter serves; the security property comes from the RNG, not the clock source.
+		s = (uint32)Sys_FloatTime() * rand();
+#endif
 #endif
 }
 
@@ -4569,8 +4585,8 @@ int SV_CreatePacketEntities_internal(sv_delta_t type, client_t *client, packet_e
 		// This is the frame that we are going to delta update from
 		fromframe = &client->frames[SV_UPDATE_MASK & client->delta_sequence];
 		from = &fromframe->entities;
-		_mm_prefetch((const char*)&from->entities[0], _MM_HINT_T0);
-		_mm_prefetch(((const char*)&from->entities[0]) + 64, _MM_HINT_T0);
+		REHLDS_PREFETCH((const char*)&from->entities[0], _MM_HINT_T0);
+		REHLDS_PREFETCH(((const char*)&from->entities[0]) + 64, _MM_HINT_T0);
 		oldmax = fromframe->entities.num_entities;
 
 		MSG_WriteByte(msg, svc_deltapacketentities);    // This is a delta
@@ -4610,8 +4626,8 @@ int SV_CreatePacketEntities_internal(sv_delta_t type, client_t *client, packet_e
 			SV_SetCallback(newnum, FALSE, custom, &numbase, FALSE, 0);
 			DELTA_WriteDelta((uint8 *)&from->entities[oldindex], (uint8 *)baseline, FALSE, custom ? g_pcustomentitydelta : (SV_IsPlayerIndex(newnum) ? g_pplayerdelta : g_pentitydelta), &SV_InvokeCallback);
 			oldindex++;
-			_mm_prefetch((const char*)&from->entities[oldindex], _MM_HINT_T0);
-			_mm_prefetch(((const char*)&from->entities[oldindex]) + 64, _MM_HINT_T0);
+			REHLDS_PREFETCH((const char*)&from->entities[oldindex], _MM_HINT_T0);
+			REHLDS_PREFETCH(((const char*)&from->entities[oldindex]) + 64, _MM_HINT_T0);
 			newindex++;
 			continue;
 		}
@@ -4653,8 +4669,8 @@ int SV_CreatePacketEntities_internal(sv_delta_t type, client_t *client, packet_e
 				if (!from)
 				{
 					offset = SV_FindBestBaseline(newindex, &baseline, to->entities, newnum, custom);
-					_mm_prefetch((const char*)baseline, _MM_HINT_T0);
-					_mm_prefetch(((const char*)baseline) + 64, _MM_HINT_T0);
+					REHLDS_PREFETCH((const char*)baseline, _MM_HINT_T0);
+					REHLDS_PREFETCH(((const char*)baseline) + 64, _MM_HINT_T0);
 					if (offset)
 						SV_SetCallback(newnum, FALSE, custom, &numbase, TRUE, offset);
 
@@ -4711,8 +4727,8 @@ int SV_CreatePacketEntities_internal(sv_delta_t type, client_t *client, packet_e
 			// remove = TRUE, tell the client that entity was removed from server
 			SV_WriteDeltaHeader(oldnum, TRUE, FALSE, &numbase, FALSE, 0, FALSE, 0);
 			oldindex++;
-			_mm_prefetch((const char*)&from->entities[oldindex], _MM_HINT_T0);
-			_mm_prefetch(((const char*)&from->entities[oldindex]) + 64, _MM_HINT_T0);
+			REHLDS_PREFETCH((const char*)&from->entities[oldindex], _MM_HINT_T0);
+			REHLDS_PREFETCH(((const char*)&from->entities[oldindex]) + 64, _MM_HINT_T0);
 			continue;
 		}
 	}

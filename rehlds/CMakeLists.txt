@@ -68,20 +68,50 @@ set(CMAKE_SHARED_LIBRARY_LINK_CXX_FLAGS "")
 set(REHLDS_TARGET_BITS "32" CACHE STRING "Target word size: 32 (supported) or 64 (experimental, does not work)")
 set_property(CACHE REHLDS_TARGET_BITS PROPERTY STRINGS 32 64)
 
-if (REHLDS_TARGET_BITS STREQUAL "64")
+# Architecture selection. REHLDS_TARGET_BITS picks the x86 word size; a CMake toolchain
+# file (cmake/toolchain-aarch64.cmake) selects AArch64 instead, in which case there is no
+# -m flag and the x86-only tuning flags below must be suppressed.
+if (CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")
+	set(REHLDS_ARCH_X86 FALSE)
+	set(ARCH_FLAG "")
+	set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+	set(ENGINE_PIC ON)
+	set(ENGINE_OUTPUT_NAME engine_arm64)
+elseif (REHLDS_TARGET_BITS STREQUAL "64")
+	set(REHLDS_ARCH_X86 TRUE)
 	set(ARCH_FLAG "-m64")
 	# A .so without -fPIC merely works by accident on i386; on x86-64 it fails to link with
 	# R_X86_64_32 relocations against .text, so PIC has to come back on.
 	set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 	set(ENGINE_PIC ON)
-	# engine_i486 is an i386 name. Follow ReGameDLL/Xash3D's convention instead so the two
+	# engine_i486 is an i386 name. Follow ReGameDLL/Xash3D's convention instead so the
 	# architectures can coexist in one install (common/port.h:112-116 already defines
 	# SO_ARCH_SUFFIX "_amd64.so" for this and has never been used).
 	set(ENGINE_OUTPUT_NAME engine_amd64)
 else()
+	set(REHLDS_ARCH_X86 TRUE)
 	set(ARCH_FLAG "-m32")
 	set(ENGINE_PIC OFF)
 	set(ENGINE_OUTPUT_NAME engine_i486)
+endif()
+
+# The delta JIT is an IA-32 code generator (fixed esi/edi/ebx/ebp allocation, 4-byte stack
+# slots, 32-bit cdecl calls) and does not compile for any other target. SSE is x86-only.
+# Force both off rather than letting a 64-bit or AArch64 configure succeed and then fail
+# deep in the build with confusing jitasm template errors. Both have portable fallbacks that
+# the unit tests exercise -- see docs/audit/11-portable-fallbacks.md.
+if (NOT (REHLDS_ARCH_X86 AND REHLDS_TARGET_BITS STREQUAL "32"))
+	if (REHLDS_ENABLE_JIT)
+		message(STATUS "ReHLDS: delta JIT is i386-only; forcing REHLDS_ENABLE_JIT=OFF")
+		set(REHLDS_ENABLE_JIT OFF CACHE BOOL "" FORCE)
+	endif()
+endif()
+
+if (NOT REHLDS_ARCH_X86)
+	if (REHLDS_ENABLE_SSE)
+		message(STATUS "ReHLDS: SSE is x86-only; forcing REHLDS_ENABLE_SSE=OFF")
+		set(REHLDS_ENABLE_SSE OFF CACHE BOOL "" FORCE)
+	endif()
 endif()
 
 set(COMPILE_FLAGS "${ARCH_FLAG} -U_FORTIFY_SOURCE -DFORTIFY_SOURCE=0")
@@ -117,8 +147,11 @@ if ("$ENV{CXX}" MATCHES "icpc")
 else()
 	# Produce code optimized for the most common IA32/AMD64/EM64T processors.
 	# As new processors are deployed in the marketplace, the behavior of this option will change.
+	if (REHLDS_ARCH_X86)
+		set(COMPILE_FLAGS "${COMPILE_FLAGS} -mtune=generic -msse3")
+	endif()
+
 	set(COMPILE_FLAGS "${COMPILE_FLAGS} \
-		-mtune=generic -msse3\
 		-fpermissive -fno-sized-deallocation\
 		-Wno-unknown-pragmas -Wno-invalid-offsetof\
 		-Wno-unused-variable -Wno-unused-result -Wno-unused-function -Wno-delete-non-virtual-dtor\
@@ -136,8 +169,8 @@ else()
 	endif()
 endif()
 
-# GCC >= 8.3
-if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 8.0)
+# GCC >= 8.3. -fcf-protection is x86 CET and is rejected on AArch64.
+if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 8.0 AND REHLDS_ARCH_X86)
 	set(COMPILE_FLAGS "${COMPILE_FLAGS} -fcf-protection=none")
 endif()
 
@@ -228,7 +261,7 @@ set(ENGINE_SRCS
 	engine/snd_null.cpp
 	engine/sse_mathfun.cpp
 	engine/public_amalgamation.cpp
-	$<$<STREQUAL:${REHLDS_TARGET_BITS},64>:${PROJECT_SOURCE_DIR}/engine/steam_stub_64.cpp>
+	$<$<NOT:$<BOOL:${STEAM_LIB}>>:${PROJECT_SOURCE_DIR}/engine/steam_stub_64.cpp>
 	rehlds/flight_recorder.cpp
 	rehlds/FlightRecorderImpl.cpp
 	rehlds/frameperf.cpp
@@ -312,7 +345,7 @@ target_compile_definitions(engine PRIVATE
 	# tree. Without HAVE_OPT_STRTOOLS, public/strtools.h:108+ selects a complete libc
 	# fallback for Q_memcpy/Q_strlen/Q_stricmp and friends -- correct everywhere, at some
 	# cost on the hottest string paths.
-	$<$<STREQUAL:${REHLDS_TARGET_BITS},32>:HAVE_OPT_STRTOOLS>
+	$<$<BOOL:${REHLDS_USE_ASMLIB}>:HAVE_OPT_STRTOOLS>
 	USE_BREAKPAD_HANDLER
 	_LINUX
 	LINUX
@@ -346,11 +379,13 @@ else()
 	set(COMPAT_M_LIB -l:libm.so.6)
 endif()
 
-if (REHLDS_TARGET_BITS STREQUAL "32")
+if (REHLDS_TARGET_BITS STREQUAL "32" AND REHLDS_ARCH_X86)
+	set(REHLDS_USE_ASMLIB TRUE)
 	set(ARCH_ONLY_LIBS aelf32)
 	set(STEAM_LIB steam_api)
 else()
-	# aelf32 is a 32-bit static archive; see the HAVE_OPT_STRTOOLS note above.
+	# aelf32 is a 32-bit x86 static archive; see the HAVE_OPT_STRTOOLS note above.
+	set(REHLDS_USE_ASMLIB FALSE)
 	set(ARCH_ONLY_LIBS "")
 	# The bundled libsteam_api.so is 32-bit, and the modern 64-bit one implements
 	# SteamGameServer015 against these SteamGameServer011 headers. engine/steam_stub_64.cpp

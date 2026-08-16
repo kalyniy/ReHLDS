@@ -14,7 +14,11 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 
 #include "crc32c.h"
 #include "sys_shared.h"
+// x86 intrinsics for the SSE4.2 CRC32 path below, which is itself #ifdef REHLDS_SSE and
+// runtime-dispatched on cpuinfo.sse4_2 with a full table fallback (crc32c_t_nosse).
+#if defined(__i386__) || defined(__x86_64__)
 #include "immintrin.h"
+#endif
 
 /*****************************************************************/
 /*                                                               */

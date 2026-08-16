@@ -30,6 +30,13 @@ misrepresented as being the original software.
 */
 #pragma once
 
+// This entire header is x86 SIMD and is included unconditionally by precompiled.h. Guarding
+// the contents rather than the include site keeps every consumer correct on non-x86, where
+// the SSE code it serves is compiled out anyway (REHLDS_ENABLE_SSE / mathlib.cpp's scalar
+// twins).
+#if defined(__i386__) || defined(__x86_64__) || defined(_M_IX86) || defined(_M_X64)
+#define REHLDS_HAVE_SSE_MATHFUN 1
+
 #include <xmmintrin.h>
 
 /* yes I know, the top of this file is quite ugly */
@@ -118,3 +125,5 @@ extern v4sf exp_ps(v4sf x);
 extern v4sf sin_ps(v4sf x);
 extern v4sf cos_ps(v4sf x);
 extern void sincos_ps(v4sf x, v4sf *s, v4sf *c);
+
+#endif // x86

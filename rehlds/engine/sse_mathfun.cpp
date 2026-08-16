@@ -31,6 +31,11 @@ misrepresented as being the original software.
 
 #include "precompiled.h"
 
+// The header guards its contents on x86 (REHLDS_HAVE_SSE_MATHFUN); this file must follow, or
+// it fails to compile on any other architecture. The SSE code it provides is selected by
+// REHLDS_ENABLE_SSE and has scalar twins in mathlib.cpp.
+#ifdef REHLDS_HAVE_SSE_MATHFUN
+
 /* natural logarithm computed for 4 simultaneous float
 return NaN for x <= 0
 */
@@ -445,3 +450,5 @@ void sincos_ps(v4sf x, v4sf *s, v4sf *c) {
 	*s = _mm_xor_ps(xmm1, sign_bit_sin);
 	*c = _mm_xor_ps(xmm2, sign_bit_cos);
 }
+
+#endif // REHLDS_HAVE_SSE_MATHFUN

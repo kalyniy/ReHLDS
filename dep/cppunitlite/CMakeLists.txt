@@ -20,6 +20,8 @@ target_compile_definitions(cppunitlite PRIVATE
 	_GLIBCXX_USE_CXX11_ABI=0
 )
 
+# Follow the parent build's architecture instead of hardcoding i386. ARCH_FLAG is empty
+# for AArch64, where no -m flag applies.
 target_compile_options(cppunitlite PRIVATE
-	-m32
+	${ARCH_FLAG}
 )

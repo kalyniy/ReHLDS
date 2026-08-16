@@ -88,8 +88,14 @@
 #include <fstream>
 #include <iomanip>
 
-#include <smmintrin.h>
-#include <xmmintrin.h>
+// x86 SIMD intrinsics. These were included unconditionally, which is fine while i386 and
+// x86-64 are the only targets but stops an AArch64 build before it starts -- 89 errors from
+// this one site. The SSE code they serve is already selectable (REHLDS_ENABLE_SSE) and has
+// scalar twins in mathlib.cpp, so gating the headers costs nothing on x86.
+#if defined(__i386__) || defined(__x86_64__) || defined(_M_IX86) || defined(_M_X64)
+	#include <smmintrin.h>
+	#include <xmmintrin.h>
+#endif
 
 
 #ifdef _WIN32 // WINDOWS
@@ -136,7 +142,9 @@
 		VirtualFree(ptr, 0, MEM_RELEASE);
 	}
 #else // _WIN32
-	#include <x86intrin.h>
+	#if defined(__i386__) || defined(__x86_64__)
+		#include <x86intrin.h>
+	#endif
 
 	#ifndef PAGESIZE
 		#define PAGESIZE 4096

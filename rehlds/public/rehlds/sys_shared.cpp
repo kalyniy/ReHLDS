@@ -27,7 +27,12 @@
 */
 #include "sys_shared.h"
 
-#if defined(__GNUC__)
+// CPUID is x86-only; <cpuid.h> does not exist on other architectures.
+#if defined(__i386__) || defined(__x86_64__)
+	#define REHLDS_HAVE_CPUID 1
+#endif
+
+#if defined(__GNUC__) && defined(REHLDS_HAVE_CPUID)
 #include <cpuid.h>
 #elif _MSC_VER >= 1400 && !(defined(ASMLIB_H) && defined(HAVE_OPT_STRTOOLS))
 #include <intrin.h>	// __cpuidex
@@ -51,6 +56,13 @@ cpuinfo_t cpuinfo;
 // strtools.h:67 already requires both symbols; match it.
 void Sys_CheckCpuInstructionsSupport(void)
 {
+#ifndef REHLDS_HAVE_CPUID
+	// Non-x86: every flag here names an x86 SIMD extension, so they are all absent by
+	// definition. The consumers already dispatch on these at runtime and fall back to the
+	// scalar implementations in mathlib.cpp / crc32c.cpp, so zeroing is the correct answer
+	// rather than a stub. An AArch64 build wanting NEON should add its own feature bits.
+	Q_memset(&cpuinfo, 0, sizeof(cpuinfo));
+#else
 	unsigned int cpuid_data[4];
 
 #if defined(ASMLIB_H) && defined(HAVE_OPT_STRTOOLS)
@@ -77,4 +89,5 @@ void Sys_CheckCpuInstructionsSupport(void)
 #endif
 
 	cpuinfo.avx2 = (cpuid_data[1] & AVX2_FLAG) ? 1 : 0; // ebx
+#endif // REHLDS_HAVE_CPUID
 }

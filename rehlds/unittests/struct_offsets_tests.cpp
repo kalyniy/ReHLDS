@@ -18,6 +18,16 @@
 	UINT32_EQUALS("Bad offset "#s"::"#f, needOff, realOff); \
 	}
 
+// These offsets pin client_t to the layout of Valve's original 32-bit engine so that
+// third-party binaries (Metamod, AMXX, plugins) which hard-code offsets keep working. They
+// describe an IN-MEMORY ABI, not a serialized format, and client_t embeds netchan_t (four
+// pointers), client_frame_t*, edict_t*, two resource_t and more -- so every one of them
+// legitimately changes on any 64-bit target. Checking them there tests nothing real and
+// fails by construction: on AArch64, chokecount lands at 9600 rather than 9264.
+//
+// The plugin-compatibility guarantee they encode only exists on i386 anyway, since a 64-bit
+// engine cannot load 32-bit plugins at all.
+#if defined(__i386__) || defined(_M_IX86)
 TEST(StructOffsets, ReversingChecks, 5000)
 {
 	CHECK_STRUCT_OFFSET(client_t, active, 0, 0);
@@ -40,5 +50,6 @@ TEST(StructOffsets, ReversingChecks, 5000)
 	//CHECK_STRUCT_OFFSET(CSteam3Server, m_bLanOnly, 0x86, 0x9E);
 	//CHECK_STRUCT_OFFSET(CSteam3Server, m_SteamIDGS, 0x87, 0x9F);
 }
+#endif // i386
 
 #pragma warning( pop )

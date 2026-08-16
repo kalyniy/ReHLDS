@@ -52,7 +52,15 @@
 // For EBP based stack (older gcc) (uncomment version apropriate for your compiler)
 //#define NOXREFCHECK			int __retAddr; __asm__ __volatile__("movl 4(%%ebp), %%eax;" "movl %%eax, %0":"=r"(__retAddr)::"%eax"); Sys_Error("[NOXREFCHECK]: %s: (" __FILE__ ":" __LINE__AS_STRING ") NOXREF, but called from 0x%.08x", __func__, __retAddr);
 // For ESP based stack (newer gcc) (uncomment version apropriate for your compiler)
+#if defined(__i386__)
 #define NOXREFCHECK			int __retAddr; __asm__ __volatile__("movl 16(%%esp), %%eax;" "movl %%eax, %0":"=r"(__retAddr)::"%eax"); Sys_Error("[NOXREFCHECK]: %s: (" __FILE__ ":" __LINE__AS_STRING ") NOXREF, but called from 0x%.08x", __func__, __retAddr);
+#else
+// The i386 asm above hardcodes a 32-bit stack layout. It does not assemble at all on
+// AArch64, and -- worse -- it assembles fine on x86-64 while reading garbage, so the
+// diagnostic silently lied there. __builtin_return_address(0) is portable and actually
+// correct on every target.
+#define NOXREFCHECK			void *__retAddr = __builtin_return_address(0); Sys_Error("[NOXREFCHECK]: %s: (" __FILE__ ":" __LINE__AS_STRING ") NOXREF, but called from %p", __func__, __retAddr);
+#endif
 #endif
 
 #define BIT(n) (1<<(n))
