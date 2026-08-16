@@ -278,7 +278,9 @@ static void FramePerf_Dump_f()
 				total += scratch[i];
 			}
 			FramePerf_Report(g_subNames[sub], scratch, n, "us");
-			Con_Printf("  %-18s share of measured frame time: %5.1f%%\n", "",
+			// Share of WALL time over the sampled span, not of frame execution: this is the
+			// number that says whether raising sys_ticrate is affordable.
+			Con_Printf("  %-18s share of wall time: %5.2f%%\n", "",
 				span > 0.0 ? 100.0 * (double)total / (span * 1e9) : 0.0);
 		}
 	}
