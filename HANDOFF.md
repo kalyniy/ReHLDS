@@ -34,6 +34,19 @@ outward-facing actions.
 
 ---
 
+## 0b. The owner's goal for the Mac
+
+**Run the HLDS *server* natively on Apple Silicon (MacBook Pro / Mac mini), and play from a
+separate Windows PC.** No client on the Mac — that is explicitly not wanted, and is
+impossible anyway (§4.1).
+
+Bots are optional: if zBots run on the Mac they are welcome as load, otherwise an empty but
+running server is acceptable. **Bots do work** — ReGameDLL's zBots have been verified running
+10-strong on AArch64, so they will run here too (§8b).
+
+Read §4b before promising "native", because the word has two meanings on this hardware and
+only one of them is available today.
+
 ## 1. What this project is
 
 Make an owner-controlled ReHLDS fork measurably better for competitive CS 1.6: deterministic
@@ -122,24 +135,85 @@ apt-get update && apt-get install -y \
 That is all the AArch64 build needs — it compiles natively there, no cross-toolchain and no
 qemu.
 
+## 4b. "Natively on Mac" — two meanings, be precise about which
+
+The owner's goal (§0b) is a native Mac server. There are two readings and they are very
+different in cost:
+
+**(a) Native-speed ARM64 Linux in a container — available today.**
+On Apple Silicon, Docker/OrbStack run a lightweight Linux VM via Apple's
+Virtualization.framework. The CPU executes AArch64 instructions **directly** — no
+translation, no qemu, full core performance. Our `engine_arm64.so` runs there as-is. This is
+what §4's setup gives you and it works right now.
+
+**The caveat that matters for THIS project:** it is still a VM. This project exists to chase
+microsecond-scale tail latency — `-pingboost 4` holds p50 within 0.1 µs of target and the open
+question is p99. A virtualisation layer adds timer and scheduling jitter on top of the guest
+kernel's own. **Whether that is acceptable is unmeasured and is the single most important
+experiment this machine can run.** Do not assume it is fine, and do not assume it is fatal —
+measure it with `docs/audit/tools/bench.sh` and compare against the x86-64 Linux numbers in
+`docs/audit/08`.
+
+**(b) A true `arm64-apple-darwin` build — does not exist, and is a real project.**
+Not started. Sharing an instruction set is the easy part. Known blockers, none of them
+cosmetic:
+
+- **`clock_nanosleep` does not exist on macOS.** The `-pingboost 4` deadline scheduler is
+  built on `clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME)`. Darwin needs `mach_wait_until()`
+  plus `mach_absolute_time()`. The project's headline feature needs a second implementation.
+- **`prctl(PR_SET_TIMERSLACK)` does not exist**; Darwin uses thread QoS classes and
+  `thread_policy_set`. That was worth ~45 Hz on Linux.
+- **`RTLD_DEEPBIND` does not exist on macOS.** The engine uses it to load the GameDLL with
+  isolated symbol resolution; Darwin's two-level namespace behaves differently and needs
+  thought, not a flag swap.
+- **`/proc` does not exist.** `Host_UpdateStats` parses `/proc/<pid>/stat`; Darwin needs
+  `proc_pidinfo` / `task_info`.
+- **`ld64` has no `--wrap`.** `filesystem_stdio`'s `pathmatch.cpp` relies on the GNU linker's
+  symbol wrapping (`__real_*` / `__wrap_*`). There is no direct equivalent; it needs
+  restructuring or `DYLD_INTERPOSE`.
+- Mach-O rather than ELF: `.dylib` naming, no version scripts (use `-exported_symbols_list`),
+  different PIC/PIE rules.
+- Steam: a macOS `libsteam_api.dylib` does ship with both x64 and arm64 slices, but the
+  interface-version mismatch in §8 applies regardless.
+
+Note the game install already contains `cstrike/dlls/cs.dylib`, so Valve did ship a macOS
+GameDLL historically — ReGameDLL may port more easily than the engine.
+
+**Recommendation.** Do (a) first and measure the VM's tail-latency cost. That answer decides
+whether (b) is worth doing at all — and if (a) turns out fine, (b) may never be needed.
+A third option, bare-metal Linux via Asahi, is unlikely to be viable: Asahi targets M1/M2 with
+later chips in progress, so an M5 Max is almost certainly unsupported.
+
 ### If you also need x86 targets on this Mac
 
 `--platform linux/amd64` gives you an emulated x86-64 container (Rosetta-backed under
 OrbStack, qemu under Docker). It works but is slow, and **i386 still will not work** for §4.1.
 For any 32-bit work, use a real x86-64 Linux machine.
 
-## 5. Game content — an Apple Silicon gotcha
+## 5. Game content — already on the Mac
 
-**`steamcmd` is x86-only and will not run on arm64.** Do not plan to download HLDS on the Mac
-natively. Options, best first:
+**`steamcmd` is x86-only and will not run on arm64 — but you do not need it.** It is only a
+downloader; the game content is architecture-independent data (296 MB `cstrike/` + 433 MB
+`valve/`: maps, models, sounds, WADs). The only arch-specific files are the game DLL, which we
+build, and `cl_dlls/`, which is client-side and irrelevant to a server.
 
-1. **Copy the existing install** from the x86-64 Ubuntu box that has it (`~/projects/hlds`,
-   ~836 MB) — the game data is architecture-independent, only the binaries are not:
-   ```bash
-   rsync -a --exclude 'engine_*.so' --exclude 'hlds_linux' --exclude 'filesystem_stdio.so' \
-       user@ubuntu-box:~/projects/hlds/ ~/rehlds-work/hlds/
-   ```
-2. Run `steamcmd` in an emulated `linux/amd64` container and copy the result out.
+**The owner already installed Steam and CS 1.6 on this Mac.** The game would not launch —
+correctly, see §4.1 — but Steam still downloaded the content. It is at roughly:
+
+```
+~/Library/Application Support/Steam/steamapps/common/Half-Life/
+```
+
+Mount that into the container read-only and copy out `cstrike/` and `valve/`, or point the
+server at a writable copy:
+
+```bash
+cp -R ~/Library/Application\ Support/Steam/steamapps/common/Half-Life/{cstrike,valve} \
+      ~/rehlds-work/hlds/
+```
+
+Fallbacks if that install is missing or incomplete: copy from the x86-64 Ubuntu box
+(`~/projects/hlds`), or run `steamcmd` in an emulated `linux/amd64` container.
 
 The zBot files were already installed there: `cstrike/BotProfile.db`, `BotChatter.db`,
 `sound/radio/bot/*`, `bot_enable 1` in `cstrike/game_init.cfg`, and a generated
@@ -220,6 +294,34 @@ cd ~/rehlds-work/hlds
 (`engine/steam_stub_64.cpp`) with no authentication, no VAC and no master server. The real
 64-bit `libsteam_api.so` implements `SteamGameServer015` while these headers are pinned to
 `SteamGameServer011`, so it is not a drop-in — that remains an open workstream.
+
+## 8b. Bots on Apple Silicon, and connecting from the Windows PC
+
+**Bots work.** ReGameDLL's zBots were verified running 10-strong on AArch64 (under emulation;
+native will be faster). They are pure game code with no architecture dependency beyond what
+the GameDLL already needed.
+
+Setup, in this order — the middle step is the one that silently fails if skipped:
+
+1. Extract `regamedll/extra/zBot/bot_profiles.zip` from the ReGameDLL repo into the game root.
+   It provides `cstrike/BotProfile.db`, `BotChatter.db` and 487 radio `.wav` files. It ships
+   *in the repo*, so no third-party download.
+2. `bot_enable 1` in `cstrike/game_init.cfg` (create the file; it does not exist by default).
+3. **`bot_join_after_player 0`** — otherwise bots wait for a human and the server sits empty
+   with no diagnostic beyond `players : 0 active`.
+4. `bot_quota 10`. On a navless map the first bot spawn auto-generates `maps/<map>.nav`
+   (~60 s, ~422 KB, persists).
+
+**Connecting from the Windows PC.** Publish the game port from the container — GoldSrc is UDP:
+
+```bash
+docker run -it -p 27015:27015/udp ...
+```
+
+Then from CS 1.6 on the PC: `connect <mac-lan-ip>:27015`. Use `sv_lan 1` and `-insecure` (the
+Steam stub means no authentication either way, §8). If the client cannot see the server,
+check the Mac's firewall and that the container published **UDP**, not TCP — publishing TCP
+only is the usual mistake and produces a silent failure.
 
 ### Instrumentation
 
