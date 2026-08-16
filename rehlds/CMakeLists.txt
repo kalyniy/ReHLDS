@@ -23,6 +23,18 @@ project(engine CXX)
 option(DEBUG "Build with debug information." OFF)
 option(USE_STATIC_LIBSTDC "Enables static linking libstdc++." OFF)
 
+# The vendored lib/linux32/{librt,libm}.so are old-glibc import stubs, kept so that
+# release binaries bind to ancient symbol versions and run on legacy server distros
+# (see rehlds/version/glibc_test.sh). The vendored librt.so imports __libc_dlopen_mode,
+# __libc_dlsym and __pthread_unwind from GLIBC_PRIVATE; those were removed in glibc 2.34
+# when librt/libpthread/libdl were folded into libc, so linking it fails outright on any
+# host with glibc >= 2.34 (Ubuntu 22.04+, Debian 12+).
+#
+# Turning this OFF links rt/m from the host toolchain by exact soname instead, which
+# builds on a modern host at the cost of raising the binary's minimum glibc. Use it for
+# local development, benchmarking and sanitizer builds; leave it ON for anything shipped.
+option(USE_VENDORED_COMPAT_LIBS "Link the bundled old-glibc librt/libm import stubs (required for legacy-distro release builds; breaks on glibc >= 2.34)." ON)
+
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -275,10 +287,21 @@ target_sources(engine PRIVATE
 	${UNITTESTS_SRCS}>
 )
 
+if (USE_VENDORED_COMPAT_LIBS)
+	set(COMPAT_RT_LIB rt)
+	set(COMPAT_M_LIB m)
+else()
+	# -l:<soname> bypasses the vendored lib/linux32/lib{rt,m}.so link stubs, which would
+	# otherwise win because that -L path precedes the system ones. aelf32 and steam_api
+	# still resolve from lib/linux32 as normal.
+	set(COMPAT_RT_LIB -l:librt.so.1)
+	set(COMPAT_M_LIB -l:libm.so.6)
+endif()
+
 target_link_libraries(engine PRIVATE
 	dl
-	rt
-	m
+	${COMPAT_RT_LIB}
+	${COMPAT_M_LIB}
 	aelf32
 	bzip2
 	steam_api

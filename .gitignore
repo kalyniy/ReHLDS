@@ -20,3 +20,7 @@
 **/msvc/ipch
 
 rehlds/version/appversion.h
+
+# local build trees
+/build/
+/build-release/
