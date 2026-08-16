@@ -687,7 +687,12 @@ qboolean Host_FilterTime(float time)
 		else
 			fps = sys_ticrate.value;
 
-		if (fps > 0.0f)
+		// When the deadline scheduler (-pingboost 4) is pacing the loop it has already
+		// decided when this frame should run, and its phase corrections are intervals
+		// shorter than a period -- exactly what this check rejects. See the comment on
+		// g_bSchedDeadlineActive in engine/net_ws.cpp. Every other pingboost mode is
+		// unaffected.
+		if (fps > 0.0f && !g_bSchedDeadlineActive)
 		{
 			if (1.0f / (fps + 1.0f) > realtime - oldrealtime)
 				return FALSE;

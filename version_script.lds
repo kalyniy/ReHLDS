@@ -3,6 +3,7 @@ HLDS_ABI_1.0 {
 		CreateInterface;
 		F;
 		NET_Sleep_Timeout;
+		NET_Sleep_Deadline;
 	local: 
 		*;
 };

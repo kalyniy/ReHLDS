@@ -1044,6 +1044,147 @@ DLL_EXPORT int NET_Sleep_Timeout()
 	return res;
 }
 
+// Absolute-deadline frame pacing, selected by the dedicated launcher's -pingboost 4.
+//
+// Every pre-existing pingboost mode paces the host loop with a *relative* sleep, so the
+// achieved rate is quantised by that sleep's granularity rather than set by sys_ticrate.
+// Measured consequence (docs/audit/06-real-server-validation.md): sys_ticrate 2000 under
+// modes 0/1/2 runs at 927.6 Hz -- indistinguishable from sys_ticrate 1000 -- and mode 3
+// only exceeds 1000 Hz because (1000/fps)*1000 truncates to a 1 us timeout, turning the
+// loop into a spin that burns ~10 iterations and ~19k context switches per second per
+// admitted frame.
+//
+// This mode instead sleeps to an absolute deadline on CLOCK_MONOTONIC, anchored to an
+// epoch, so wake error cannot accumulate into drift: a late wake does not move the next
+// deadline. Because a full period always elapses between admitted frames, Host_FilterTime's
+// 1/(fps+1) threshold is always already satisfied and the gate becomes a no-op rather than
+// a mechanism fighting the pacing. Nothing about that gate's behaviour changes.
+//
+// Deliberately NOT waiting on sockets here, unlike NET_Sleep_Timeout: a frame rejected by
+// Host_FilterTime returns from _Host_Frame before SV_Frame runs, so no packet is read on a
+// rejected iteration. Waking early for a packet therefore cannot reduce command latency in
+// the current architecture -- it only burns CPU. Making early wakeups useful requires
+// moving packet reading ahead of the admission gate, which is a separate and much larger
+// change. Recorded rather than silently assumed.
+//
+// Existing modes are untouched; this is purely additive and opt-in.
+
+cvar_t sv_rehlds_sched_spin_us = { "sv_rehlds_sched_spin_us", "0", 0, 0.0f, NULL };
+
+// Set once the deadline scheduler has taken over pacing. Host_FilterTime consults this and
+// skips its minimum-elapsed-time check, because the two mechanisms are incompatible:
+//
+// An absolute deadline self-corrects. If one wake lands 30 us late, the next interval is
+// deliberately ~30 us SHORTER than a period so that phase is restored. Host_FilterTime
+// rejects any interval below 1/(fps+1) -- 999.0 us at sys_ticrate 1000, and 499.75 us at
+// 2000, a margin of only 0.25 us against a 500 us period. The gate therefore rejects
+// exactly the corrections the deadline exists to make, and because the deadline has
+// already advanced, each rejection costs a whole period.
+//
+// Measured before this flag existed: -pingboost 4 at sys_ticrate 1000 achieved 769.0 Hz
+// with reject_ratio 0.206 and a bimodal p95 of 2000.3 us -- worse than the 928.8 Hz of the
+// mode it was meant to replace. The failure is what established that the deadline has to
+// replace the gate rather than sit on top of it.
+qboolean g_bSchedDeadlineActive = FALSE;
+
+// The deadline the frame now executing was released at. Read by the frame instrumentation
+// so that reported lateness is measured against the deadline the scheduler actually used,
+// rather than against frameperf's own independently-phased synthetic one.
+uint64 g_SchedFrameDeadlineNs = 0;
+
+#ifndef _WIN32
+#include <sys/prctl.h>
+
+static uint64 NET_SchedNow()
+{
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return (uint64)ts.tv_sec * 1000000000ull + (uint64)ts.tv_nsec;
+}
+
+DLL_EXPORT void NET_Sleep_Deadline()
+{
+	static uint64 deadline_ns;
+	static uint64 period_ns;
+	static float  cached_ticrate;
+	static bool   initialized;
+
+	// A frame that overruns by more than this is treated as a discontinuity (map change,
+	// level load, hitching) and the deadline is rebased instead of catching up through
+	// thousands of missed periods.
+	static const uint64 REBASE_THRESHOLD_NS = 1000000000ull;
+
+	float fps = sys_ticrate.value;
+	if (fps < 1.0f)
+		fps = 1.0f;
+
+	uint64 now = NET_SchedNow();
+
+	if (!initialized || fps != cached_ticrate)
+	{
+		// Ask the kernel not to batch our timer expiries. The default slack is 50 us,
+		// which is 5% of a 1000 Hz period and 10% of a 2000 Hz one; measured, removing it
+		// moves the p50 frame interval by exactly that much.
+		if (!initialized)
+			prctl(PR_SET_TIMERSLACK, 1UL, 0, 0, 0);
+
+		cached_ticrate = fps;
+		period_ns = (uint64)(1000000000.0 / (double)fps);
+		if (period_ns == 0)
+			period_ns = 1;
+
+		deadline_ns = now + period_ns;
+		initialized = true;
+		g_bSchedDeadlineActive = TRUE;
+	}
+
+	if (deadline_ns <= now)
+	{
+		if (now - deadline_ns > REBASE_THRESHOLD_NS)
+		{
+			deadline_ns = now + period_ns;
+		}
+		else
+		{
+			// Preserve phase: advance by whole periods rather than restarting from now,
+			// so a single long frame does not permanently shift every later deadline.
+			do {
+				deadline_ns += period_ns;
+			} while (deadline_ns <= now);
+		}
+		return;
+	}
+
+	uint64 spin_ns = (uint64)(sv_rehlds_sched_spin_us.value * 1000.0f);
+	uint64 wake_ns = (spin_ns && deadline_ns > now + spin_ns) ? deadline_ns - spin_ns : deadline_ns;
+
+	struct timespec ts;
+	ts.tv_sec  = (time_t)(wake_ns / 1000000000ull);
+	ts.tv_nsec = (long)(wake_ns % 1000000000ull);
+	while (clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &ts, NULL) == EINTR)
+		;
+
+	// Optional busy guard window. Off by default: measured, it buys a tighter p99 at
+	// roughly 7x the idle CPU, which is a per-deployment decision rather than a default.
+	if (spin_ns)
+	{
+		while (NET_SchedNow() < deadline_ns)
+			;
+	}
+
+	g_SchedFrameDeadlineNs = deadline_ns;
+	deadline_ns += period_ns;
+}
+#else // _WIN32
+DLL_EXPORT void NET_Sleep_Deadline()
+{
+	// Not implemented on Windows: the pingboost mechanism lives in the Linux dedicated
+	// launcher (dedicated/src/sys_linux.cpp) and there is no caller here. Falling back to
+	// the legacy timeout keeps the symbol defined for any out-of-tree caller.
+	NET_Sleep_Timeout();
+}
+#endif // _WIN32
+
 int NET_Sleep()
 {
 	fd_set fdset;
@@ -1955,6 +2096,7 @@ void NET_Init()
 {
 	Cmd_AddCommand("maxplayers", MaxPlayers_f);
 
+	Cvar_RegisterVariable(&sv_rehlds_sched_spin_us);
 	Cvar_RegisterVariable(&net_address);
 	Cvar_RegisterVariable(&ipname);
 	Cvar_RegisterVariable(&iphostport);

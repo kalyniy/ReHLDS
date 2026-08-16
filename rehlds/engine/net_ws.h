@@ -190,6 +190,12 @@ void NET_FlushSocket(netsrc_t sock);
 qboolean NET_GetLong(unsigned char *pData, int size, int *outSize);
 qboolean NET_QueuePacket(netsrc_t sock);
 int NET_Sleep();
+
+// TRUE once the -pingboost 4 absolute-deadline scheduler is pacing the host loop.
+extern qboolean g_bSchedDeadlineActive;
+
+// Deadline the currently-executing frame was released at; valid only when the above is TRUE.
+extern uint64 g_SchedFrameDeadlineNs;
 void NET_StartThread();
 void NET_StopThread();
 void *net_malloc(size_t size);

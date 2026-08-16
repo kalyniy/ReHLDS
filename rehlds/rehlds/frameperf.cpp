@@ -106,7 +106,13 @@ void FramePerf_OnFrameEnd()
 	s->wake_ns = g_wake_ns;
 	s->frame_start_ns = g_frame_start_ns;
 	s->frame_end_ns = end;
-	s->intended_deadline_ns = g_epoch_ns + g_deadline_index * g_period_ns;
+
+	// Prefer the deadline the scheduler actually released this frame at. Falling back to
+	// the synthetic one would measure the phase difference between two independently
+	// anchored deadlines, which is not lateness and is not meaningful.
+	s->intended_deadline_ns = g_bSchedDeadlineActive
+		? g_SchedFrameDeadlineNs
+		: g_epoch_ns + g_deadline_index * g_period_ns;
 	s->rejected_before = g_rejected_run;
 	s->flags = 0;
 	g_written++;
@@ -228,8 +234,12 @@ static void FramePerf_Dump_f()
 		(unsigned long long)overruns, (unsigned long long)early);
 	Con_Printf("  rejected iterations per admitted frame (window avg)=%.2f\n",
 		n ? (double)rejected_in_window / (double)n : 0.0);
-	Con_Printf("  NOTE: the deadline above is synthetic. The engine does not schedule\n");
-	Con_Printf("        against it; see docs/audit/01-frame-scheduler.md.\n");
+
+	if (g_bSchedDeadlineActive)
+		Con_Printf("  deadline source: -pingboost 4 scheduler (real deadlines)\n");
+	else
+		Con_Printf("  NOTE: the deadline above is synthetic. This scheduler does not\n"
+		           "        target one; see docs/audit/01-frame-scheduler.md.\n");
 }
 
 static void FramePerf_Reset_f()

@@ -57,6 +57,7 @@ char g_szEXEName[MAX_PATH];
 
 SleepType Sys_Sleep;
 NET_Sleep_t NET_Sleep_Timeout = nullptr;
+NET_Sleep_t NET_Sleep_Deadline = nullptr;
 
 CSys::CSys()
 {
@@ -95,6 +96,15 @@ void Sleep_Select(int msec)
 void Sleep_Net(int msec)
 {
 	NET_Sleep_Timeout();
+}
+
+// -pingboost 4. Like Sleep_Net, the msec argument is unused: the engine derives the wait
+// from sys_ticrate. Unlike every other mode, the wait targets an absolute monotonic
+// deadline, so sleep overshoot cannot accumulate into drift. See NET_Sleep_Deadline in
+// engine/net_ws.cpp and docs/audit/07-deadline-scheduler.md.
+void Sleep_Deadline(int msec)
+{
+	NET_Sleep_Deadline();
 }
 
 // linux runs on a 100Hz scheduling clock, so the minimum latency from
@@ -167,6 +177,17 @@ void Sys_InitPingboost()
 			// we Sys_GetProcAddress NET_Sleep() from
 			//engine_i486.so later in this function
 			NET_Sleep_Timeout = (NET_Sleep_t)Sys_GetProcAddress(g_pEngineModule, "NET_Sleep_Timeout");
+			break;
+		case 4:
+			NET_Sleep_Deadline = (NET_Sleep_t)Sys_GetProcAddress(g_pEngineModule, "NET_Sleep_Deadline");
+			if (NET_Sleep_Deadline) {
+				Sys_Sleep = Sleep_Deadline;
+			} else {
+				// Engine predates the deadline scheduler. Fall back rather than crash.
+				printf("Warning: -pingboost 4 requires a ReHLDS engine exporting "
+				       "NET_Sleep_Deadline; falling back to default sleep.\n");
+				Sys_Sleep = Sleep_Old;
+			}
 			break;
 		// just in case
 		default:
