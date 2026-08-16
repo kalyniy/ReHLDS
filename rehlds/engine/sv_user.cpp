@@ -1453,6 +1453,10 @@ void SV_SetupMove(client_t *_host_client)
 			SV_LinkEdict(cl->edict, FALSE);
 			pos->needrelink = 1;
 			HitReg_LagCompOutcome(HITREG_LC_REWOUND);
+
+			// Sample how far the live pose has drifted from the snapshot this origin came
+			// from. The hull will be built from cl->edict's live angles/sequence/frame.
+			HitReg_PoseDivergence(state, cl->edict, (float)(realtime - targettime));
 		}
 		else
 		{

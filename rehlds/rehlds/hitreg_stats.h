@@ -43,6 +43,18 @@ void HitReg_LagCompOutcome(int outcome);
 // Called for every studio-hull construction, distinguishing cache hits from recomputes.
 void HitReg_StudioHull(qboolean cacheHit);
 
+// Called at the moment a victim's origin is rewound, with the historical snapshot the
+// origin came from and the live edict whose pose the hitbox will actually be built from.
+//
+// This is the direct measurement of the chimera described in docs/audit/03-lag-compensation.md:
+// SV_SetupMove restores origin and nothing else, so the studio hull is constructed from the
+// victim's CURRENT angles/sequence/frame while standing at their PAST position. Sampling
+// both sides here quantifies how far apart those two epochs actually are in practice,
+// without needing to intercept individual bullets.
+//
+// rewindSecs is realtime - targettime, i.e. how far back the origin was moved.
+void HitReg_PoseDivergence(const struct entity_state_s *hist, const struct edict_s *live, float rewindSecs);
+
 // Called for every traceline that resolved against a player. NOT restricted to weapon fire:
 // the bullet/knife/flash distinction lives in GameDLL-private trace_flags bits, which the
 // engine deliberately does not interpret.
