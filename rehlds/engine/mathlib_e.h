@@ -160,7 +160,11 @@ void _VectorAdd(vec_t *veca, vec_t *vecb, vec_t *out);
 NOBODY void _VectorCopy(vec_t *in, vec_t *out);
 void CrossProduct(const vec_t *v1, const vec_t *v2, vec_t *cross);
 float Length(const vec_t *v);
+#ifdef REHLDS_SSE
+// Defined only in mathlib_sse.cpp. Declaring it unconditionally turned a scalar-build
+// mistake into a link error instead of a compile error.
 float Length2D(const vec_t *v);
+#endif
 float VectorNormalize(vec_t *v);
 NOBODY void VectorInverse(vec_t *v);
 NOBODY int Q_log2(int val);

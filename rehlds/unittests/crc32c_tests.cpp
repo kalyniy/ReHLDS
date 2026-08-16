@@ -29,15 +29,19 @@ TEST(CRC32C_Hash, CRC32C, 1000) {
 
 	for (int i = 0; i < ARRAYSIZE(testdata); i++) {
 		uint32 pureCksum0 = crc32c_t_nosse(0, (const uint8*)testdata[i].src, strlen(testdata[i].src));
-		uint32 sseCksum0 = crc32c_t_sse(0, (const uint8*)testdata[i].src, strlen(testdata[i].src));
-
 		uint32 pureCksumFF = crc32c_t_nosse(-1, (const uint8*)testdata[i].src, strlen(testdata[i].src));
-		uint32 sseCksumFF = crc32c_t_sse(-1, (const uint8*)testdata[i].src, strlen(testdata[i].src));
-		
-		UINT32_EQUALS("Pure crc32c checksum-0 mismatch", testdata[i].hash0, pureCksum0);
-		UINT32_EQUALS("SSE crc32c checksum-0 mismatch", testdata[i].hash0, sseCksum0);
 
+		UINT32_EQUALS("Pure crc32c checksum-0 mismatch", testdata[i].hash0, pureCksum0);
 		UINT32_EQUALS("Pure crc32c checksum-FF mismatch", testdata[i].hashFF, pureCksumFF);
+
+		// crc32c_t_sse only exists in an SSE build; the scalar configuration has nothing to
+		// compare against here. The reference values above are checked either way.
+#ifdef REHLDS_SSE
+		uint32 sseCksum0 = crc32c_t_sse(0, (const uint8*)testdata[i].src, strlen(testdata[i].src));
+		uint32 sseCksumFF = crc32c_t_sse(-1, (const uint8*)testdata[i].src, strlen(testdata[i].src));
+
+		UINT32_EQUALS("SSE crc32c checksum-0 mismatch", testdata[i].hash0, sseCksum0);
 		UINT32_EQUALS("SSE crc32c checksum-FF mismatch", testdata[i].hashFF, sseCksumFF);
+#endif // REHLDS_SSE
 	}
 }

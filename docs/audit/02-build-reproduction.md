@@ -111,10 +111,13 @@ Two facts worth carrying forward:
   by the offsets test. These are **in-memory ABI**, not wire format, and *will* change on
   LP64. The struct-offsets test is therefore an x86-32 ABI guard, not a protocol guard —
   it must be re-based, not merely made to pass, during the x86-64 port.
-- The delta tests exercise the **JIT** path (`REHLDS_JIT` is defined in the Unittests
-  configuration). There is currently **no** test that runs the same vectors through the
-  portable non-JIT path and compares. Adding that equivalence test is a prerequisite for
-  the x86-64/ARM64 port and is cheap to do now — logged as a follow-up.
+- ~~The delta tests exercise the **JIT** path only; there is no portable-path equivalence
+  test.~~ **CORRECTED (see `11-portable-fallbacks.md`).** `_DeltaSimpleTests`
+  (`unittests/delta_tests.cpp:243`) loops `for (int usejit = 0; usejit <= 1; usejit++)`, so
+  every delta vector is already run through **both** the JIT and the portable C++ path and
+  checked against the same expectations. The equivalence test exists and passes. This
+  materially de-risks the x86-64/ARM64 port, since the path those builds fall back to is
+  already validated against the JIT.
 
 ### Release build — succeeded, all artifacts produced
 

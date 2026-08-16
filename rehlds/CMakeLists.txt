@@ -35,6 +35,26 @@ option(USE_STATIC_LIBSTDC "Enables static linking libstdc++." OFF)
 # local development, benchmarking and sanitizer builds; leave it ON for anything shipped.
 option(USE_VENDORED_COMPAT_LIBS "Link the bundled old-glibc librt/libm import stubs (required for legacy-distro release builds; breaks on glibc >= 2.34)." ON)
 
+# Both of these have complete, already-tested portable fallbacks in the tree, but until now
+# there was no way to select them: REHLDS_JIT and REHLDS_SSE were defined unconditionally.
+#
+#   REHLDS_ENABLE_JIT OFF -> delta.cpp takes its non-JIT C++ path throughout, and all of
+#     delta_jit.cpp compiles away. The x86 delta JIT is an IA-32 code generator (fixed
+#     esi/edi/ebx/ebp allocation, 4-byte stack slots, 32-bit cdecl calls), so it cannot
+#     survive an x86-64 or ARM64 port as-is; the brief's plan is to disable it for first
+#     bring-up on those targets.
+#
+#   REHLDS_ENABLE_SSE OFF -> mathlib.cpp's scalar AngleVectors/BoxOnPlaneSide/etc. replace
+#     mathlib_sse.cpp. Note the SSE paths already dispatch at runtime on cpuinfo, and
+#     mathlib_tests.cpp force cpuinfo.sse4_1 = 0 to exercise the scalar twin, so both sides
+#     are covered by the existing suite.
+#
+# Defaults ON preserve upstream behaviour exactly. Turning them off on x86-32 first is what
+# lets the portability work change one variable at a time, rather than debugging the
+# fallbacks and a new architecture simultaneously.
+option(REHLDS_ENABLE_JIT "Build the x86 delta JIT. OFF selects the portable C++ delta path." ON)
+option(REHLDS_ENABLE_SSE "Build the SSE mathlib paths. OFF selects the scalar implementations." ON)
+
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -258,8 +278,8 @@ target_include_directories(engine PRIVATE
 
 target_compile_definitions(engine PRIVATE
 	SWDS
-	REHLDS_JIT
-	REHLDS_SSE
+	$<$<BOOL:${REHLDS_ENABLE_JIT}>:REHLDS_JIT>
+	$<$<BOOL:${REHLDS_ENABLE_SSE}>:REHLDS_SSE>
 	REHLDS_FIXES
 	REHLDS_CHECKS
 	REHLDS_API
@@ -277,8 +297,7 @@ target_compile_definitions(engine PRIVATE
 	_vsnprintf=vsnprintf
 	_vsnwprintf=vswprintf
 
-	$<$<CONFIG:Unittests>:
-	REHLDS_UNIT_TESTS REHLDS_SSE REHLDS_JIT>
+	$<$<CONFIG:Unittests>:REHLDS_UNIT_TESTS>
 )
 
 target_sources(engine PRIVATE

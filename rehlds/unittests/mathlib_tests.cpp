@@ -172,6 +172,10 @@ TEST(LengthTest, MathLib, 1000) {
 	}
 }
 
+// Length2D is defined only in mathlib_sse.cpp, and the engine's single call site
+// (mathlib.cpp:170) is itself #ifdef REHLDS_SSE with a scalar Q_sqrt twin. It is therefore
+// an SSE-only entry point, and there is nothing to test in a scalar build.
+#ifdef REHLDS_SSE
 TEST(Length2DTest, MathLib, 1000) {
 	Sys_CheckCpuInstructionsSupport();
 	CHECK_WARNING_OUT("SSE4.1 Support", cpuinfo.sse4_1);
@@ -196,6 +200,7 @@ TEST(Length2DTest, MathLib, 1000) {
 		cpuinfo.sse4_1 = 0;
 	}
 }
+#endif // REHLDS_SSE
 
 TEST(VectorNormalizeTest, MathLib, 1000) {
 	Sys_CheckCpuInstructionsSupport();
