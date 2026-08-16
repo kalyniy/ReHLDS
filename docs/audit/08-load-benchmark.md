@@ -98,6 +98,34 @@ operator decision, not a default.
 25 µs is *not* enough — execution p50 stays at 16.5 µs, i.e. the core still goes cold. The
 useful threshold on this host is between 25 and 50 µs.
 
+## 4b. Post-fix numbers (commit `660e949`)
+
+Re-reading the scheduler after these runs turned up a defect the benchmark had not isolated:
+the overrun path advanced the deadline and then **returned immediately**, so the loop ran a
+frame with ~0 elapsed time. Stock `Host_FilterTime` made that unreachable; standing the gate
+down reintroduced it. Such a frame advances the simulation by nothing while paying full
+frame cost, and drives `host_frametime` to ~0 — which `host_cmd.cpp:453` divides by.
+
+Fixing it (skip the passed deadlines, wait for the next) also improved the tail, because
+those null frames were displacing real ones:
+
+| metric, `sys_ticrate 2000`, 10 bots | before | after |
+|---|---|---|
+| p99 interval | 810.8 µs | **654.9 µs** |
+| p99.9 interval | 2026.0 µs | **1549.9 µs** |
+| lateness p99 | 483.8 µs | **161.1 µs** |
+| overruns | 83 | **31** |
+
+Post-fix at `sys_ticrate 1000`: 997.7 Hz, p50 999.8 µs, p99 1360.4, overruns 19, CPU 3.6 %.
+
+The dump now reports `skipped=N` (deadlines abandoned to overrun): 643 at 2000 Hz and 108 at
+1000 Hz over a 25 s window with 10 bots. This is the honest sustainability signal — a
+growing count means the configured tick rate does not fit the host.
+
+The spin-window figures in §3 predate this fix and should be re-measured before the spin
+trade-off is treated as settled; the fix narrowed the no-spin tail considerably, so the
+spin's marginal value is now smaller than §4 implies.
+
 ## 5. Cheaper alternative worth testing before accepting the spin cost
 
 The spin is a blunt instrument for what is really a C-state problem. Two levers should be
