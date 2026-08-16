@@ -335,6 +335,13 @@ void EXT_FUNC PF_traceline_Shared(const float *v1, const float *v2, int nomonste
 	trace_t trace = SV_Move(v1, vec3_origin, vec3_origin, v2, nomonsters, ent, FALSE);
 #endif // REHLDS_OPT_PEDANTIC
 
+	// Instrumentation only. Counts every traceline that resolved against a player, not just
+	// weapon fire: the bullet/knife/flash distinction lives in GameDLL-private trace_flags
+	// bits (ReGameDLL reserves BIT(16)+ for exactly that and leaves the low bits to the
+	// engine), so the engine has no business interpreting them.
+	if (trace.ent && (trace.ent->v.flags & FL_CLIENT))
+		HitReg_PlayerHit(trace.hitgroup);
+
 	gGlobalVariables.trace_flags = 0;
 	SV_SetGlobalTrace(&trace);
 }

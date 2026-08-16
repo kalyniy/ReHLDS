@@ -620,9 +620,12 @@ hull_t *R_StudioHull(model_t *pModel, float frame, int sequence, const vec_t *an
 			Q_memcpy(studio_hull, &cache_hull[pCached->nStartHull], pCached->numhulls * sizeof(hull_t));
 
 			*pNumHulls = pCached->numhulls;
+			HitReg_StudioHull(TRUE);
 			return studio_hull;
 		}
 	}
+
+	HitReg_StudioHull(FALSE);
 
 	pstudiohdr = (studiohdr_t *)Mod_Extradata(pModel);
 

@@ -1335,16 +1335,30 @@ void SV_SetupMove(client_t *_host_client)
 				continue;
 
 
+			// Instrumentation only: record which condition first disqualifies this victim
+			// from lag compensation. The conditions and their order are unchanged.
 			if (state->health <= 0)
+			{
+				if (!pos->deadflag)
+					HitReg_LagCompOutcome(HITREG_LC_SKIP_DEAD);
 				pos->deadflag = 1;
+			}
 
 			if (state->effects & EF_NOINTERP)
+			{
+				if (!pos->deadflag)
+					HitReg_LagCompOutcome(HITREG_LC_SKIP_NOINTERP);
 				pos->deadflag = 1;
+			}
 
 			if (pos->temp_org_setflag)
 			{
 				if (SV_UnlagCheckTeleport(state->origin, pos->temp_org))
+				{
+					if (!pos->deadflag)
+						HitReg_LagCompOutcome(HITREG_LC_SKIP_TELEPORT);
 					pos->deadflag = 1;
+				}
 			}
 			else
 			{
@@ -1438,6 +1452,11 @@ void SV_SetupMove(client_t *_host_client)
 			cl->edict->v.origin[2] = origin[2];
 			SV_LinkEdict(cl->edict, FALSE);
 			pos->needrelink = 1;
+			HitReg_LagCompOutcome(HITREG_LC_REWOUND);
+		}
+		else
+		{
+			HitReg_LagCompOutcome(HITREG_LC_UNCHANGED);
 		}
 	}
 }

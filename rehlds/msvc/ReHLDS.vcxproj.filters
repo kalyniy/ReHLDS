@@ -167,6 +167,9 @@
     <ClCompile Include="..\rehlds\frameperf.cpp">
       <Filter>rehlds</Filter>
     </ClCompile>
+    <ClCompile Include="..\rehlds\hitreg_stats.cpp">
+      <Filter>rehlds</Filter>
+    </ClCompile>
     <ClCompile Include="..\rehlds\platform.cpp">
       <Filter>rehlds</Filter>
     </ClCompile>
@@ -836,6 +839,9 @@
       <Filter>public\rehlds</Filter>
     </ClInclude>
     <ClInclude Include="..\rehlds\frameperf.h">
+      <Filter>rehlds</Filter>
+    </ClInclude>
+    <ClInclude Include="..\rehlds\hitreg_stats.h">
       <Filter>rehlds</Filter>
     </ClInclude>
     <ClInclude Include="..\rehlds\hookchains_impl.h">

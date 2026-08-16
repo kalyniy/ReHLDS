@@ -52,6 +52,7 @@
 #include "rehlds_messagemngr_impl.h"
 #include "rehlds_security.h"
 #include "frameperf.h"
+#include "hitreg_stats.h"
 
 #include "dlls/cdll_dll.h"
 #include "hltv.h"

@@ -189,6 +189,7 @@ set(ENGINE_SRCS
 	rehlds/flight_recorder.cpp
 	rehlds/FlightRecorderImpl.cpp
 	rehlds/frameperf.cpp
+	rehlds/hitreg_stats.cpp
 	rehlds/hookchains_impl.cpp
 	rehlds/main.cpp
 	rehlds/platform.cpp
