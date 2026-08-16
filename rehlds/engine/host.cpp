@@ -145,6 +145,7 @@ void NORETURN Host_Error(const char *error, ...)
 void Host_InitLocal(void)
 {
 	Host_InitCommands();
+	FramePerf_Init();
 	Cvar_RegisterVariable(&host_killtime);
 	Cvar_RegisterVariable(&sys_ticrate);
 	Cvar_RegisterVariable(&sys_timescale);
@@ -869,8 +870,12 @@ void _Host_Frame(float time)
 		return;
 
 	//Unknown_windows_func_01D37CD0();
-	if (!Host_FilterTime(time))
+	qboolean admitted = Host_FilterTime(time);
+	FramePerf_OnAdmission(admitted);
+	if (!admitted)
 		return;
+
+	FramePerf_OnFrameBegin();
 
 #ifdef REHLDS_FLIGHT_REC
 	static long frameCounter = 0;
@@ -946,6 +951,8 @@ void _Host_Frame(float time)
 	}
 	frameCounter++;
 #endif //REHLDS_FLIGHT_REC
+
+	FramePerf_OnFrameEnd();
 }
 
 int Host_Frame(float time, int iState, int *stateInfo)

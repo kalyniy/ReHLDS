@@ -118,6 +118,7 @@
     <ClCompile Include="..\public\utlbuffer.cpp" />
     <ClCompile Include="..\rehlds\FlightRecorderImpl.cpp" />
     <ClCompile Include="..\rehlds\flight_recorder.cpp" />
+    <ClCompile Include="..\rehlds\frameperf.cpp" />
     <ClCompile Include="..\rehlds\main.cpp" />
     <ClCompile Include="..\rehlds\rehlds_messagemngr_impl.cpp" />
     <ClCompile Include="..\rehlds\rehlds_api_impl.cpp" />
@@ -440,6 +441,7 @@
     <ClInclude Include="..\rehlds\engine.h" />
     <ClInclude Include="..\rehlds\FlightRecorderImpl.h" />
     <ClInclude Include="..\rehlds\flight_recorder.h" />
+    <ClInclude Include="..\rehlds\frameperf.h" />
     <ClInclude Include="..\rehlds\hookchains_impl.h" />
     <ClInclude Include="..\rehlds\rehlds_messagemngr_impl.h" />
     <ClInclude Include="..\rehlds\platform.h" />

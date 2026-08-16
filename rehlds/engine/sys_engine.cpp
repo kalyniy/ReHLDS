@@ -104,6 +104,10 @@ int CEngine::Frame()
 	if (!game->IsActiveApp())
 		game->SleepUntilInput(m_nDLLState != DLL_PAUSED ? MINIMIZED_SLEEP : NOT_FOCUS_SLEEP);
 
+	// First thing after the launcher's pingboost sleep returns, so wake time is recorded
+	// before any engine work can bias it.
+	FramePerf_OnWake();
+
 	m_fCurTime = Sys_FloatTime();
 	m_fFrameTime = m_fCurTime - m_fOldTime;
 	m_fOldTime = m_fCurTime;
