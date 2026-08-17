@@ -1301,6 +1301,7 @@ static void SV_ApplyHistoricalPose(edict_t *ent, sv_adjusted_positions_t *pos,
 	pos->oldframe = ent->v.frame;
 	pos->oldsequence = ent->v.sequence;
 	pos->oldgaitsequence = ent->v.gaitsequence;
+	pos->oldgaityaw = ent->v.fuser4;
 	pos->poserestore = 1;
 
 	// Angles interpolate; a rewind mid-turn should land between the two samples.
@@ -1337,11 +1338,28 @@ static void SV_ApplyHistoricalPose(edict_t *ent, sv_adjusted_positions_t *pos,
 	// anyway for consistency and for mods that do read pev->gaitsequence.
 	ent->v.gaitsequence = (to && frac >= 0.5f) ? to->gaitsequence : from->gaitsequence;
 
+	// The gait yaw, which is what actually orients the hitboxes.
+	//
+	// ReGameDLL replaces the root rotation matrix yaw with UTIL_GetPlayerGaitYaw for every
+	// player (animation.cpp:1183), so the angles[1] rewind above never reaches the model's
+	// orientation on its own -- it only feeds R_StudioPlayerBlend via pitch. With ReGameDLL
+	// mirroring m_flGaityaw into pev->fuser4 and reading it back from there, rewinding this
+	// field is what finally turns the victim's body back to where the shooter saw it.
+	//
+	// Interpolated as an ANGLE, not linearly: gait yaw is cyclic, and a bracket straddling
+	// +-180 would otherwise swing the body the long way round -- the same defect
+	// SV_LerpFrame exists to avoid for studio frames.
+	if (to)
+		ent->v.fuser4 = SV_LerpAngle(from->fuser4, to->fuser4, frac);
+	else
+		ent->v.fuser4 = from->fuser4;
+
 	pos->appliedangles[0] = ent->v.angles[0];
 	pos->appliedangles[1] = ent->v.angles[1];
 	pos->appliedangles[2] = ent->v.angles[2];
 	pos->appliedframe = ent->v.frame;
 	pos->appliedsequence = ent->v.sequence;
+	pos->appliedgaityaw = ent->v.fuser4;
 }
 
 void SV_SetupMove(client_t *_host_client)
@@ -1653,6 +1671,14 @@ void SV_RestoreMove(client_t *_host_client)
 				cli->edict->v.sequence = pos->oldsequence;
 				cli->edict->v.gaitsequence = pos->oldgaitsequence;
 			}
+
+			// Guarded separately: the pose fields above can be rewritten by game code during
+			// the window (a death animation, which is what froze corpses in docs/audit/21),
+			// and gait yaw can move independently of them. Tying the two together would let
+			// one stand-down strand the other. Even a missed restore here self-heals, since
+			// ReGameDLL's PostThink rewrites pev->fuser4 from m_flGaityaw every frame.
+			if (cli->edict->v.fuser4 == pos->appliedgaityaw)
+				cli->edict->v.fuser4 = pos->oldgaityaw;
 			pos->poserestore = 0;
 		}
 

@@ -81,6 +81,7 @@ struct PoseSample
 {
 	float yawDelta;      // |historical yaw - live yaw|, wrapped to [0,180]
 	float pitchDelta;    // likewise for pitch
+	float gaitYawDelta;  // likewise for gait yaw (pev->fuser4), which orients the hitboxes
 	float rewindMs;      // how far back the origin was moved
 	uint8 seqMismatch;   // historical sequence  != live sequence
 	uint8 gaitMismatch;  // historical gaitsequence != live gaitsequence
@@ -109,6 +110,10 @@ void HitReg_PoseDivergence(const struct entity_state_s *hist, const struct edict
 	PoseSample *s = &g_pose[g_poseWritten & POSE_RING_MASK];
 	s->pitchDelta = HitReg_AngleDelta(hist->angles[0], live->v.angles[0]);
 	s->yawDelta   = HitReg_AngleDelta(hist->angles[1], live->v.angles[1]);
+	// Gait yaw is the quantity that actually decides hitbox orientation, and until ReGameDLL
+	// began mirroring it into pev->fuser4 it could not be observed from here at all. View yaw
+	// above is only a loose proxy: gait yaw lags it by design, so it may diverge more or less.
+	s->gaitYawDelta = HitReg_AngleDelta(hist->fuser4, live->v.fuser4);
 	s->rewindMs   = rewindSecs * 1000.0f;
 	s->seqMismatch  = (hist->sequence != live->v.sequence) ? 1 : 0;
 	s->gaitMismatch = (hist->gaitsequence != live->v.gaitsequence) ? 1 : 0;
@@ -199,12 +204,14 @@ static void HitReg_Dump_f()
 	if (pn > 0)
 	{
 		static float yaw[POSE_RING_SIZE], pitch[POSE_RING_SIZE], rew[POSE_RING_SIZE];
+		static float gaityaw[POSE_RING_SIZE];
 		uint64 first = g_poseWritten - pn;
 		for (int i = 0; i < pn; i++)
 		{
 			const PoseSample *s = &g_pose[(first + i) & POSE_RING_MASK];
 			yaw[i] = s->yawDelta;
 			pitch[i] = s->pitchDelta;
+			gaityaw[i] = s->gaitYawDelta;
 			rew[i] = s->rewindMs;
 		}
 
@@ -212,6 +219,7 @@ static void HitReg_Dump_f()
 			pn, (unsigned long long)g_poseWritten);
 		Con_Printf("  historical snapshot vs LIVE edict at hitbox construction time\n");
 		HitReg_ReportPose("yaw delta", yaw, pn, "deg");
+		HitReg_ReportPose("gaityaw delta", gaityaw, pn, "deg");
 		HitReg_ReportPose("pitch delta", pitch, pn, "deg");
 		HitReg_ReportPose("rewind", rew, pn, "ms");
 		Con_Printf("  sequence mismatch=%llu (%.2f%%)  gaitsequence mismatch=%llu (%.2f%%)\n",
@@ -219,8 +227,9 @@ static void HitReg_Dump_f()
 			100.0 * (double)g_poseSeqMismatch / (double)g_poseWritten,
 			(unsigned long long)g_poseGaitMismatch,
 			100.0 * (double)g_poseGaitMismatch / (double)g_poseWritten);
-		Con_Printf("  NOTE: m_flGaityaw supplies the ROOT bone yaw and is neither networked\n");
-		Con_Printf("        nor snapshotted, so its divergence cannot be measured here.\n");
+		Con_Printf("  gaityaw is the ROOT bone yaw (ReGameDLL animation.cpp:1183) and is what\n");
+		Con_Printf("        orients the hitboxes; it requires a ReGameDLL that mirrors\n");
+		Con_Printf("        m_flGaityaw into pev->fuser4, else it reads zero. docs/audit/24.\n");
 	}
 
 	Con_Printf("--- hitreg: player hits by hitgroup (%llu) ---\n",

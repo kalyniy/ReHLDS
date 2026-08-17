@@ -66,6 +66,10 @@ typedef struct sv_adjusted_positions_s
 	vec3_t appliedangles;
 	float appliedframe;
 	int appliedsequence;
+	// Gait yaw travels through pev->fuser4: ReGameDLL mirrors m_flGaityaw into it each
+	// PostThink and reads it back in UTIL_GetPlayerGaitYaw. See docs/audit/24.
+	float oldgaityaw;
+	float appliedgaityaw;
 } sv_adjusted_positions_t;
 
 typedef struct clc_func_s

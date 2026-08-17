@@ -1,7 +1,9 @@
 # Design 24 — Completing the Hitbox Fix: Rewinding Gait Yaw
 
 **Date:** 2026-08-16
-**Status:** designed, **not implemented** — see §5 for why
+**Status:** **implemented**, behind `sv_rehlds_unlag_pose` (default `0`). Spans both repos:
+ReHLDS `audit/m0-baseline` and ReGameDLL `feature/gaityaw-lagcomp`. Not yet validated against a
+real client — see §5.
 
 This is the missing half of `docs/audit/21`. That change rewinds the victim's animation
 (sequence, frame, pitch) but explicitly not their gait yaw. This document establishes that the
@@ -90,7 +92,57 @@ The engine→GameDLL channel in step 2/3 is the only genuinely new interface. It
 new engine export, since that would break the ABI for existing mods; writing into an unused
 `entvars_t` slot that ReGameDLL agrees to read is the compatible option.
 
-## 5. Why this is designed but not built
+## 5. What was built, and what remains unvalidated
+
+Implemented exactly as designed above, using `fuser4` rather than `fuser1` — `pev->fuser1` is CS
+stamina (`ResetStamina`, forwarded to the owning client as `cd->fuser1`), whereas `fuser4` is
+unused by ReGameDLL, unused by `pm_shared`, and **absent from `delta.lst` entirely**, so it is
+never transmitted for any entity type.
+
+The design also collapsed to something simpler than §4 proposed: no "rewind active" flag is
+needed. ReGameDLL *publishes* live `m_flGaityaw` into `pev->fuser4` every PostThink and always
+reads back from `pev->fuser4`, so outside a rewind the two are identical and the engine only has
+to save, overwrite and restore one field.
+
+Confirmed while building it: `AddToFullPack` writes **directly into `frame->entities`** under
+`REHLDS_OPT_PEDANTIC` (`sv_main.cpp:4889`), which is unconditionally defined — and the
+non-pedantic path does a full `Q_memcpy` of `entity_state_t`. So the snapshot field survives
+into the history `SV_SetupMove` reads under either build.
+
+Gait yaw is interpolated with `SV_LerpAngle`, not linearly: it is cyclic, and a bracket
+straddling ±180 would otherwise swing the body the long way round — the same defect
+`SV_LerpFrame` exists to avoid for studio frames. The restore is guarded **separately** from the
+rest of the pose, because game code can rewrite sequence/frame during the window (the
+frozen-corpse case in `docs/audit/21`) while gait yaw moves independently; tying them together
+would let one stand-down strand the other.
+
+**What is verified.** The publish/read path is functionally proven: if the mirror were broken,
+`UTIL_GetPlayerGaitYaw` would return 0 for every player, every model's root would face yaw 0,
+and bot-vs-bot hit detection would collapse. Four interleaved 150 s 10-bot matches — baseline
+16 and 18 frags, this build 18 and 20. Both engine and mod build clean, 35 tests pass, and the
+server runs.
+
+**What is not verified, and cannot be here.** The *rewind itself* has never executed, because
+bots never enter `SV_SetupMove` — `SV_RunCmd` gates it on `!host_client->fakeclient`. So the
+interpolation, the `applied*` guard and the restore are all reasoned and reviewed but unexercised.
+The `gaityaw delta` figures in `rehlds_perf_hitreg_dump` will read zero until a human connects.
+
+**The measurement to take first**, with `sv_rehlds_unlag_pose 0` — this quantifies the defect
+without changing any behaviour, because `HitReg_PoseDivergence` samples before the pose is
+touched:
+
+```
+sv_rehlds_perf_hitreg 1
+<play>
+rehlds_perf_hitreg_dump
+```
+
+Compare the new `gaityaw delta` percentiles against `yaw delta`. If gait divergence is small,
+this whole change is not worth enabling; if it is comparable to or larger than view-yaw
+divergence, it is the dominant hitbox error. Only then set `sv_rehlds_unlag_pose 1` and confirm
+the gait figures fall.
+
+## 5b. Original rationale for deferring
 
 **It cannot be validated without a real client.** Bots never trigger any of this —
 `SV_RunCmd` gates `SV_SetupMove` on `!host_client->fakeclient`, so every fake client skips
